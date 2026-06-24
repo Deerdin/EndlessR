@@ -310,12 +310,63 @@ const gdriveService = {
         }
     },
 
+    // Find or create the EndlessR folder on Google Drive
+    async findOrCreateFolder() {
+        if (!this.accessToken) return null;
+
+        try {
+            // Search for EndlessR folder
+            const query = encodeURIComponent("mimeType = 'application/vnd.google-apps.folder' and name = 'EndlessR' and trashed = false");
+            const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive`, {
+                headers: { 'Authorization': `Bearer ${this.accessToken}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                if (data.files && data.files.length > 0) {
+                    console.log("Drive: Found existing EndlessR folder:", data.files[0].id);
+                    return data.files[0].id;
+                }
+            }
+
+            // Folder not found, create a new one
+            console.log("Drive: EndlessR folder not found. Creating a new one...");
+            const createResponse = await fetch(`https://www.googleapis.com/drive/v3/files`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.accessToken}`,
+                    'Content-Type': 'application/json; charset=UTF-8'
+                },
+                body: JSON.stringify({
+                    name: 'EndlessR',
+                    mimeType: 'application/vnd.google-apps.folder'
+                })
+            });
+
+            if (createResponse.ok) {
+                const folderData = await createResponse.json();
+                console.log("Drive: Created EndlessR folder:", folderData.id);
+                return folderData.id;
+            } else {
+                const errText = await createResponse.text();
+                throw new Error("Klasör oluşturulamadı: " + errText);
+            }
+        } catch (e) {
+            console.error("Folder find/create failed:", e);
+        }
+        return null;
+    },
+
     // Find the backup file on Drive
     async findBackupFile() {
         if (!this.accessToken) return null;
 
         try {
-            const query = encodeURIComponent("name = 'endlessr_backup.json' and trashed = false");
+            const folderId = await this.findOrCreateFolder();
+            if (!folderId) {
+                throw new Error("EndlessR klasörü bulunamadı veya oluşturulamadı.");
+            }
+
+            const query = encodeURIComponent(`name = 'backup.json' and '${folderId}' in parents and trashed = false`);
             const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&orderBy=modifiedTime%20desc`, {
                 headers: { 'Authorization': `Bearer ${this.accessToken}` }
             });
@@ -326,7 +377,7 @@ const gdriveService = {
                     
                     // Clean up duplicate backup files asynchronously if any exist
                     if (data.files.length > 1) {
-                        console.warn(`Found ${data.files.length} duplicate backup files. Cleaning up older copies...`);
+                        console.warn(`Found ${data.files.length} duplicate backup files in EndlessR folder. Cleaning up older copies...`);
                         for (let i = 1; i < data.files.length; i++) {
                             const duplicateId = data.files[i].id;
                             fetch(`https://www.googleapis.com/drive/v3/files/${duplicateId}`, {
@@ -436,7 +487,7 @@ const gdriveService = {
                             'Content-Type': 'application/json; charset=UTF-8'
                         },
                         body: JSON.stringify({
-                            name: 'endlessr_backup.json'
+                            name: 'backup.json'
                         })
                     });
                     if (initResponse.ok) {
@@ -472,7 +523,7 @@ const gdriveService = {
                             'Content-Type': 'application/json; charset=UTF-8'
                         },
                         body: JSON.stringify({
-                            name: 'endlessr_backup.json'
+                            name: 'backup.json'
                         })
                     });
                     if (initResponse.ok) {
@@ -486,6 +537,11 @@ const gdriveService = {
 
             // If still no fileId or search failed, create a new file
             if (!fileId || !uploadUrl) {
+                const folderId = await this.findOrCreateFolder();
+                if (!folderId) {
+                    throw new Error("EndlessR klasörü bulunamadı veya oluşturulamadı.");
+                }
+
                 const initResponse = await fetch(`https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable`, {
                     method: 'POST',
                     headers: {
@@ -493,8 +549,9 @@ const gdriveService = {
                         'Content-Type': 'application/json; charset=UTF-8'
                     },
                     body: JSON.stringify({
-                        name: 'endlessr_backup.json',
-                        mimeType: 'application/json'
+                        name: 'backup.json',
+                        mimeType: 'application/json',
+                        parents: [folderId]
                     })
                 });
                 if (!initResponse.ok) {
