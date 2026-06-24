@@ -256,8 +256,8 @@ const gdriveService = {
             const allWords = await wordsDb.getAllWords();
             const allReplacements = await replacementsDb.getAllReplacements();
             
-            // Collect settings (excluding keys and auth details)
-            const keysToExclude = ['gdriveAccessToken', 'gdriveTokenExpiry', 'geminiKey', 'openaiKey'];
+            // Collect settings (excluding auth details)
+            const keysToExclude = ['gdriveAccessToken', 'gdriveTokenExpiry'];
             const allSettings = {};
             const settingKeys = await db.settings.keys();
             for (const key of settingKeys) {
