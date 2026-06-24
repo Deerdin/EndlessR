@@ -1206,18 +1206,31 @@ const app = {
             return;
         }
 
-        // B. Stack navigasyonunu işlet
+        // B. Okuyucu açıksa, okuyucuyu kapat ve kütüphane ekranına geri dön
+        if (document.getElementById('view-reader').style.display === 'flex') {
+            reader.closeReader();
+            
+            // Stack'ten kitap, bölüm ve sayfa kayıtlarını temizle, en son view kaydına dön
+            while (navHistory.stack.length > 1) {
+                const top = navHistory.stack[navHistory.stack.length - 1];
+                if (top.type === 'view') {
+                    break;
+                }
+                navHistory.stack.pop();
+            }
+            
+            navHistory.isNavigatingBack = false;
+            return;
+        }
+
+        // C. Standart stack navigasyonunu işlet
         const popped = navHistory.pop();
         if (popped) {
             const prev = popped.previous;
             navHistory.isNavigatingBack = true;
             
             if (prev.type === 'view') {
-                if (document.getElementById('view-reader').style.display === 'flex') {
-                    reader.closeReader();
-                } else {
-                    this.switchView(prev.value);
-                }
+                this.switchView(prev.value);
                 navHistory.isNavigatingBack = false;
             } else if (prev.type === 'book') {
                 reader.closeReader();
