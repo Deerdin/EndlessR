@@ -2367,5 +2367,10 @@ const reader = {
         this.closeStylePanel();
         this.closeTOCPanel();
         this.hidePopover();
+
+        // Okuyucudan çıkıldığında son ilerlemeyi buluta yedekle
+        if (typeof gdriveService !== 'undefined') {
+            gdriveService.performBackup(true);
+        }
     }
 };

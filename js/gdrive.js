@@ -8,6 +8,7 @@ const gdriveService = {
     tokenExpiry: null,
     userInfo: null,
     backupFileId: null,
+    autoBackupInterval: null,
 
     // Initialize Service: Check url hash for OAuth redirect token
     async init() {
@@ -19,6 +20,7 @@ const gdriveService = {
             this.accessToken = savedToken;
             this.tokenExpiry = savedExpiry;
             await this.loadUserInfo();
+            this.startPeriodicAutoBackup();
         } else {
             // Clean expired token
             this.clearToken();
@@ -61,6 +63,10 @@ const gdriveService = {
     // Disconnect Google Account
     async disconnect() {
         this.clearToken();
+        if (this.autoBackupInterval) {
+            clearInterval(this.autoBackupInterval);
+            this.autoBackupInterval = null;
+        }
         await settingsDb.set('gdriveAccessToken', '');
         await settingsDb.set('gdriveTokenExpiry', 0);
         this.updateUI();
@@ -120,6 +126,7 @@ const gdriveService = {
             if (response.ok) {
                 this.userInfo = await response.json();
                 this.updateUI();
+                this.startPeriodicAutoBackup();
             } else {
                 throw new Error("Profil yüklenemedi.");
             }
@@ -293,49 +300,53 @@ const gdriveService = {
             const fileId = await this.findBackupFile();
             const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
             
-            let response;
+            let uploadUrl;
             if (fileId) {
-                // Update Existing file (PATCH)
-                response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+                // Update Existing file: Start resumable session
+                const initResponse = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=resumable`, {
                     method: 'PATCH',
                     headers: {
                         'Authorization': `Bearer ${this.accessToken}`,
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json; charset=UTF-8'
                     },
-                    body: blob
+                    body: JSON.stringify({
+                        name: 'endlessr_backup.json'
+                    })
                 });
+                if (!initResponse.ok) {
+                    const errText = await initResponse.text();
+                    throw new Error("Yedek güncelleme oturumu başlatılamadı: " + errText);
+                }
+                uploadUrl = initResponse.headers.get('Location');
             } else {
-                // 1. Create file metadata (POST)
-                const metadataResponse = await fetch('https://www.googleapis.com/drive/v3/files', {
+                // Create New file: Start resumable session
+                const initResponse = await fetch(`https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${this.accessToken}`,
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json; charset=UTF-8'
                     },
                     body: JSON.stringify({
                         name: 'endlessr_backup.json',
                         mimeType: 'application/json'
                     })
                 });
-                
-                if (!metadataResponse.ok) {
-                    const errText = await metadataResponse.text();
-                    throw new Error("Yedek dosyası oluşturulamadı: " + errText);
+                if (!initResponse.ok) {
+                    const errText = await initResponse.text();
+                    throw new Error("Yedek oluşturma oturumu başlatılamadı: " + errText);
                 }
-                
-                const metadata = await metadataResponse.json();
-                const newFileId = metadata.id;
-
-                // 2. Upload file content (PATCH)
-                response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${newFileId}?uploadType=media`, {
-                    method: 'PATCH',
-                    headers: {
-                        'Authorization': `Bearer ${this.accessToken}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: blob
-                });
+                uploadUrl = initResponse.headers.get('Location');
             }
+
+            if (!uploadUrl) {
+                throw new Error("Google Drive yükleme adresi alınamadı (Location header eksik).");
+            }
+
+            // Perform the actual upload PUT request
+            const response = await fetch(uploadUrl, {
+                method: 'PUT',
+                body: blob
+            });
 
             if (response.ok) {
                 const nowStr = new Date().toLocaleString('tr-TR');
@@ -345,7 +356,8 @@ const gdriveService = {
                     alert("Verileriniz Google Drive'a başarıyla yedeklendi!");
                 }
             } else {
-                throw new Error("Yükleme başarısız oldu.");
+                const errText = await response.text();
+                throw new Error("Yedek dosyası içeriği yüklenemedi: " + errText);
             }
         } catch (e) {
             console.error("Backup failed:", e);
@@ -382,6 +394,20 @@ const gdriveService = {
                 this.performBackup(true);
             }, 5000); // 5 seconds debounce
         });
+    },
+
+    startPeriodicAutoBackup() {
+        if (this.autoBackupInterval) {
+            clearInterval(this.autoBackupInterval);
+        }
+        this.autoBackupInterval = setInterval(() => {
+            settingsDb.get('gdriveAutoSync', true).then(enabled => {
+                if (enabled && this.isAuthenticated()) {
+                    console.log("Periodic auto-sync: Performing backup...");
+                    this.performBackup(true);
+                }
+            });
+        }, 5 * 60 * 1000); // 5 minutes
     },
 
     // Download and restore backup data from Drive

@@ -103,7 +103,6 @@ const booksDb = {
                 book.progressPercent = progressPercent;
                 book.lastLocation = lastLocation;
                 await db.books.setItem(id, book);
-                if (typeof gdriveService !== 'undefined') gdriveService.scheduleAutoBackup();
                 return true;
             }
             return false;

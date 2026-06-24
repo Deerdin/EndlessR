@@ -51,12 +51,18 @@ const app = {
         // Donanımsal geri tuşu ve ekran geçmişi takibi başlat (Root Home)
         navHistory.push({ type: 'view', value: 'view-home' });
         
-        // Capacitor Back Button Dinleyicisi
+        // Capacitor Back Button ve Durum Dinleyicileri
         if (window.Capacitor && typeof window.Capacitor.Plugins !== 'undefined') {
             const { App } = window.Capacitor.Plugins;
             if (App) {
                 App.addListener('backButton', () => {
                     this.handleHardwareBack();
+                });
+                App.addListener('appStateChange', (state) => {
+                    if (!state.isActive && typeof gdriveService !== 'undefined') {
+                        console.log("Capacitor auto-sync: App moved to background, performing backup...");
+                        gdriveService.performBackup(true);
+                    }
                 });
             }
         }
@@ -1039,6 +1045,14 @@ const app = {
                 reader.closeStylePanel();
             } else {
                 reader.openStylePanel();
+            }
+        });
+
+        // Tarayıcı sekmesi kapatıldığında veya gizlendiğinde verileri Drive'a yedekle
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden' && typeof gdriveService !== 'undefined') {
+                console.log("Browser visibility auto-sync: Tab hidden, performing backup...");
+                gdriveService.performBackup(true);
             }
         });
     },
