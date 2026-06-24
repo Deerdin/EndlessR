@@ -276,7 +276,7 @@ const reader = {
             
             // Bölüm geçişinde geçmişe kaydet (NavHistory)
             if (typeof navHistory !== 'undefined' && !navHistory.isNavigatingBack) {
-                if (this.lastSpineIndex !== null && this.lastSpineIndex !== currentSpineIndex) {
+                if (this.lastSpineIndex !== currentSpineIndex) {
                     navHistory.push({ type: 'chapter', value: location.start.cfi });
                 }
             }
@@ -825,7 +825,7 @@ const reader = {
  
             // PDF sayfa geçişini geçmişe kaydet (NavHistory)
             if (typeof navHistory !== 'undefined' && !navHistory.isNavigatingBack) {
-                if (this.lastPdfPage !== null && this.lastPdfPage !== pageNumber) {
+                if (this.lastPdfPage !== pageNumber) {
                     navHistory.push({ type: 'page', value: pageNumber });
                 }
             }

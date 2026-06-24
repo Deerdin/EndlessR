@@ -1238,31 +1238,7 @@ const app = {
             return;
         }
 
-        // B. Okuyucu açıksa, okuyucuyu kapat ve kütüphane ekranına geri dön
-        if (document.getElementById('view-reader').style.display === 'flex') {
-            reader.closeReader();
-            
-            // Stack'ten kitap, bölüm ve sayfa kayıtlarını temizle, en son view kaydına dön
-            let popCount = 0;
-            while (navHistory.stack.length > 1) {
-                const top = navHistory.stack[navHistory.stack.length - 1];
-                if (top.type === 'view') {
-                    break;
-                }
-                navHistory.stack.pop();
-                popCount++;
-            }
-            
-            // Eğer tetikleyici popstate değilse, tarayıcı geçmişini de temizlenen kadar geri çek
-            if (!isPopState && popCount > 0) {
-                window.history.go(-popCount);
-            }
-            
-            navHistory.isNavigatingBack = false;
-            return;
-        }
-
-        // C. Standart stack navigasyonunu işlet
+        // B. Standart stack navigasyonunu işlet
         const popped = navHistory.pop();
         if (popped) {
             const prev = popped.previous;
