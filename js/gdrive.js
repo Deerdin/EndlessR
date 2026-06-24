@@ -260,7 +260,24 @@ const gdriveService = {
             }
 
             // Collect book reading progress metadata
-            const allBooks = await booksDb.getAllBooks(); // Returns metadata only (no raw file data)
+            const allBooksMetadata = await booksDb.getAllBooks();
+
+            // Collect full books (including file data converted to base64)
+            const allBooksFull = [];
+            const bookKeys = await db.books.keys();
+            for (const key of bookKeys) {
+                const book = await db.books.getItem(key);
+                if (book) {
+                    let base64File = null;
+                    if (book.file) {
+                        base64File = await arrayBufferToBase64Async(book.file);
+                    }
+                    allBooksFull.push({
+                        ...book,
+                        file: base64File // Overwrite ArrayBuffer with base64 string
+                    });
+                }
+            }
 
             const backupData = {
                 app: "EndlessR",
@@ -269,7 +286,8 @@ const gdriveService = {
                 words: allWords,
                 replacements: allReplacements,
                 settings: allSettings,
-                booksMetadata: allBooks
+                booksMetadata: allBooksMetadata, // Keep for backward compatibility
+                books: allBooksFull
             };
 
             const fileId = await this.findBackupFile();
@@ -425,12 +443,20 @@ const gdriveService = {
                     }
                 }
 
-                // 4. Restore Book progress metadata
-                if (backupData.booksMetadata && Array.isArray(backupData.booksMetadata)) {
+                // 4. Restore Books (including file content and progress)
+                if (backupData.books && Array.isArray(backupData.books)) {
+                    for (const book of backupData.books) {
+                        const restoredBook = { ...book };
+                        if (book.file && typeof book.file === 'string') {
+                            restoredBook.file = base64ToArrayBuffer(book.file);
+                        }
+                        await db.books.setItem(book.id, restoredBook);
+                    }
+                } else if (backupData.booksMetadata && Array.isArray(backupData.booksMetadata)) {
+                    // Fallback to old behavior if restoring from an older backup
                     for (const bookMeta of backupData.booksMetadata) {
                         const existingBookObj = await db.books.getItem(bookMeta.id);
                         if (existingBookObj) {
-                            // Sadece metadata ilerlemelerini güncelleyelim, dosya içeriğini (file) bozmayalım
                             existingBookObj.progressPercent = bookMeta.progressPercent;
                             existingBookObj.lastLocation = bookMeta.lastLocation;
                             existingBookObj.lastReadAt = bookMeta.lastReadAt;
@@ -457,3 +483,29 @@ const gdriveService = {
         }
     }
 };
+
+// Helper to convert ArrayBuffer to Base64 asynchronously
+function arrayBufferToBase64Async(buffer) {
+    return new Promise((resolve, reject) => {
+        const blob = new Blob([buffer], { type: 'application/octet-stream' });
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const dataUrl = e.target.result;
+            const base64 = dataUrl.split(',')[1];
+            resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+
+// Helper to convert Base64 to ArrayBuffer
+function base64ToArrayBuffer(base64) {
+    const binaryString = window.atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
