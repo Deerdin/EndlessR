@@ -6,13 +6,23 @@ const navHistory = {
     isNavigatingBack: false,
     
     push(action) {
-        if (this.stack.length > 0) {
+        const isFirst = this.stack.length === 0;
+        if (!isFirst) {
             const last = this.stack[this.stack.length - 1];
             if (last.type === action.type && last.value === action.value) {
                 return; // Yinelenen kaydı önle
             }
         }
         this.stack.push(action);
+
+        // Tarayıcı geçmişine de kaydet (popstate tetiklenmesi için)
+        if (typeof window !== 'undefined' && window.history) {
+            if (isFirst) {
+                window.history.replaceState({ stackIndex: this.stack.length - 1 }, "");
+            } else {
+                window.history.pushState({ stackIndex: this.stack.length - 1 }, "");
+            }
+        }
     },
     
     pop() {
@@ -1055,6 +1065,13 @@ const app = {
                 gdriveService.performBackup(true);
             }
         });
+
+        // Tarayıcı geri tuşu (popstate) olayını dinle
+        window.addEventListener('popstate', (e) => {
+            if (!navHistory.isNavigatingBack) {
+                this.handleHardwareBack(true);
+            }
+        });
     },
 
     // 7. Kitap Kartı Oluşturma ve Uzun Basma Algılama (Long Press)
@@ -1173,11 +1190,14 @@ const app = {
     },
 
     // 9. Donanımsal Geri Tuşu Mantığı
-    handleHardwareBack() {
+    handleHardwareBack(isPopState = false) {
         // A. Açık modalları ve popoverları kapat
         const popover = document.getElementById('translate-popover');
         if (popover && popover.style.display === 'flex') {
             reader.hidePopover();
+            if (isPopState) {
+                window.history.pushState({ stackIndex: navHistory.stack.length - 1 }, "");
+            }
             return;
         }
 
@@ -1185,24 +1205,36 @@ const app = {
         if (replaceModal && replaceModal.style.display === 'flex') {
             replaceModal.style.display = 'none';
             reader.clearHighlight();
+            if (isPopState) {
+                window.history.pushState({ stackIndex: navHistory.stack.length - 1 }, "");
+            }
             return;
         }
 
         const addWordModal = document.getElementById('add-word-modal');
         if (addWordModal && addWordModal.style.display === 'flex') {
             addWordModal.style.display = 'none';
+            if (isPopState) {
+                window.history.pushState({ stackIndex: navHistory.stack.length - 1 }, "");
+            }
             return;
         }
 
         const tocPanel = document.getElementById('toc-panel');
         if (tocPanel && tocPanel.classList.contains('open')) {
             reader.closeTOCPanel();
+            if (isPopState) {
+                window.history.pushState({ stackIndex: navHistory.stack.length - 1 }, "");
+            }
             return;
         }
 
         const optionsPanel = document.getElementById('reader-options-panel');
         if (optionsPanel && optionsPanel.classList.contains('open')) {
             reader.closeStylePanel();
+            if (isPopState) {
+                window.history.pushState({ stackIndex: navHistory.stack.length - 1 }, "");
+            }
             return;
         }
 
@@ -1211,12 +1243,19 @@ const app = {
             reader.closeReader();
             
             // Stack'ten kitap, bölüm ve sayfa kayıtlarını temizle, en son view kaydına dön
+            let popCount = 0;
             while (navHistory.stack.length > 1) {
                 const top = navHistory.stack[navHistory.stack.length - 1];
                 if (top.type === 'view') {
                     break;
                 }
                 navHistory.stack.pop();
+                popCount++;
+            }
+            
+            // Eğer tetikleyici popstate değilse, tarayıcı geçmişini de temizlenen kadar geri çek
+            if (!isPopState && popCount > 0) {
+                window.history.go(-popCount);
             }
             
             navHistory.isNavigatingBack = false;
@@ -1229,6 +1268,11 @@ const app = {
             const prev = popped.previous;
             navHistory.isNavigatingBack = true;
             
+            // Eğer tetikleyici popstate değilse, tarayıcı geçmişini 1 adım geri çek
+            if (!isPopState) {
+                window.history.back();
+            }
+
             if (prev.type === 'view') {
                 this.switchView(prev.value);
                 navHistory.isNavigatingBack = false;

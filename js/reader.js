@@ -2372,5 +2372,25 @@ const reader = {
         if (typeof gdriveService !== 'undefined') {
             gdriveService.performBackup(true);
         }
+
+        // Ekran butonuna basarak kapatıldıysa tarayıcı geçmişini temizle ve eşitle
+        if (typeof navHistory !== 'undefined' && !navHistory.isNavigatingBack) {
+            let popCount = 0;
+            while (navHistory.stack.length > 1) {
+                const top = navHistory.stack[navHistory.stack.length - 1];
+                if (top.type === 'view') {
+                    break;
+                }
+                navHistory.stack.pop();
+                popCount++;
+            }
+            if (popCount > 0) {
+                navHistory.isNavigatingBack = true;
+                window.history.go(-popCount);
+                setTimeout(() => {
+                    navHistory.isNavigatingBack = false;
+                }, 100);
+            }
+        }
     }
 };
