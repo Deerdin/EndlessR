@@ -427,6 +427,114 @@ const app = {
 
     // 6. Tüm Olay Dinleyicileri (Event Listeners)
     setupEventListeners() {
+        // Pull-to-refresh dynamic indicator setup
+        const pullIndicator = document.createElement('div');
+        pullIndicator.id = 'pull-to-refresh-indicator';
+        pullIndicator.style.cssText = `
+            position: absolute;
+            top: -60px;
+            left: 50%;
+            transform: translate(-50%, 0) scale(0.5);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+            z-index: 9999;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+        `;
+        pullIndicator.innerHTML = '<i data-lucide="refresh-cw" style="width: 18px; height: 18px; color: var(--accent-color);"></i>';
+        const appContainer = document.getElementById('app-container');
+        if (appContainer) {
+            appContainer.appendChild(pullIndicator);
+            if (typeof lucide !== 'undefined') lucide.createIcons({node: pullIndicator});
+        }
+
+        let startY = 0;
+        let currentY = 0;
+        let isPulling = false;
+        let activeScrollEl = null;
+
+        if (appContainer) {
+            appContainer.addEventListener('touchstart', (e) => {
+                // If reader is open, skip pull-to-refresh
+                const readerView = document.getElementById('view-reader');
+                if (readerView && (readerView.style.display === 'flex' || readerView.classList.contains('active'))) {
+                    return;
+                }
+
+                const activeView = document.querySelector('.app-view.active');
+                if (!activeView) return;
+                
+                // Only allow pull-to-refresh if the active view is scrolled to the top
+                if (activeView.scrollTop === 0) {
+                    startY = e.touches[0].clientY;
+                    currentY = startY;
+                    isPulling = true;
+                    activeScrollEl = activeView;
+                    pullIndicator.style.transition = 'none';
+                }
+            }, { passive: true });
+
+            appContainer.addEventListener('touchmove', (e) => {
+                if (!isPulling || !activeScrollEl) return;
+                
+                currentY = e.touches[0].clientY;
+                const diff = currentY - startY;
+                
+                // Only pull down
+                if (diff > 0) {
+                    const pullDistance = Math.min(100, diff * 0.4);
+                    
+                    pullIndicator.style.opacity = Math.min(1, pullDistance / 60);
+                    pullIndicator.style.transform = `translate(-50%, ${pullDistance}px) scale(${Math.min(1, pullDistance / 40)})`;
+                    
+                    const icon = pullIndicator.querySelector('i');
+                    if (icon) {
+                        icon.style.transform = `rotate(${pullDistance * 4}deg)`;
+                    }
+
+                    if (pullDistance >= 60) {
+                        pullIndicator.style.borderColor = 'var(--accent-color)';
+                    } else {
+                        pullIndicator.style.borderColor = 'var(--border-color)';
+                    }
+                }
+            }, { passive: true });
+
+            appContainer.addEventListener('touchend', (e) => {
+                if (!isPulling) return;
+                isPulling = false;
+                
+                const diff = currentY - startY;
+                const pullDistance = Math.min(100, diff * 0.4);
+                
+                pullIndicator.style.transition = 'opacity 0.25s ease, transform 0.25s ease, border-color 0.25s ease';
+                
+                if (diff > 0 && pullDistance >= 60) {
+                    // Trigger refresh
+                    pullIndicator.style.transform = `translate(-50%, 40px) scale(1.1)`;
+                    const icon = pullIndicator.querySelector('i');
+                    if (icon) icon.classList.add('spin-icon');
+                    
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 400);
+                } else {
+                    // Reset
+                    pullIndicator.style.opacity = '0';
+                    pullIndicator.style.transform = 'translate(-50%, 0) scale(0.5)';
+                    activeScrollEl = null;
+                }
+            });
+        }
+
         // Alt Navigasyon Bar Tıklamaları
         document.querySelectorAll('.nav-item').forEach(item => {
             item.addEventListener('click', (e) => {

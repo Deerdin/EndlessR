@@ -9,6 +9,7 @@ const gdriveService = {
     userInfo: null,
     backupFileId: null,
     autoBackupInterval: null,
+    isBackingUp: false,
 
     // Initialize Service: Check url hash for OAuth redirect token
     async init() {
@@ -19,6 +20,7 @@ const gdriveService = {
         if (savedToken && savedExpiry > Date.now()) {
             this.accessToken = savedToken;
             this.tokenExpiry = savedExpiry;
+            this.backupFileId = await settingsDb.get('gdriveBackupFileId', null);
             await this.loadUserInfo();
             this.startPeriodicAutoBackup();
         } else {
@@ -69,7 +71,9 @@ const gdriveService = {
         }
         await settingsDb.set('gdriveAccessToken', '');
         await settingsDb.set('gdriveTokenExpiry', 0);
+        await settingsDb.set('gdriveBackupFileId', '');
         this.updateUI();
+        window.location.reload();
     },
 
     clearToken() {
@@ -147,6 +151,9 @@ const gdriveService = {
                 // Drive'da yedek dosyası mevcut!
                 console.log("AutoSync: Backup found on Drive. Downloading and restoring...");
                 
+                this.backupFileId = fileId;
+                await settingsDb.set('gdriveBackupFileId', fileId);
+                
                 const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
                     headers: { 'Authorization': `Bearer ${this.accessToken}` }
                 });
@@ -161,7 +168,8 @@ const gdriveService = {
                             gdriveTokenExpiry: await settingsDb.get('gdriveTokenExpiry', 0),
                             gdriveClientId: await settingsDb.get('gdriveClientId', ''),
                             gdriveAutoSync: await settingsDb.get('gdriveAutoSync', true),
-                            gdriveLastBackupTime: await settingsDb.get('gdriveLastBackupTime', 'Bilinmiyor')
+                            gdriveLastBackupTime: await settingsDb.get('gdriveLastBackupTime', 'Bilinmiyor'),
+                            gdriveBackupFileId: fileId
                         };
 
                         // Yerel IndexedDB veritabanlarını tamamen sıfırla (Drive verisini baz almak için)
@@ -308,13 +316,34 @@ const gdriveService = {
 
         try {
             const query = encodeURIComponent("name = 'endlessr_backup.json' and trashed = false");
-            const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive`, {
+            const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&orderBy=modifiedTime%20desc`, {
                 headers: { 'Authorization': `Bearer ${this.accessToken}` }
             });
             if (response.ok) {
                 const data = await response.json();
                 if (data.files && data.files.length > 0) {
                     this.backupFileId = data.files[0].id;
+                    
+                    // Clean up duplicate backup files asynchronously if any exist
+                    if (data.files.length > 1) {
+                        console.warn(`Found ${data.files.length} duplicate backup files. Cleaning up older copies...`);
+                        for (let i = 1; i < data.files.length; i++) {
+                            const duplicateId = data.files[i].id;
+                            fetch(`https://www.googleapis.com/drive/v3/files/${duplicateId}`, {
+                                method: 'DELETE',
+                                headers: { 'Authorization': `Bearer ${this.accessToken}` }
+                            }).then(res => {
+                                if (res.ok) {
+                                    console.log(`Deleted duplicate backup file: ${duplicateId}`);
+                                } else {
+                                    console.warn(`Failed to delete duplicate backup file: ${duplicateId}`);
+                                }
+                            }).catch(err => {
+                                console.error(`Error deleting duplicate backup file ${duplicateId}:`, err);
+                            });
+                        }
+                    }
+                    
                     return this.backupFileId;
                 }
             }
@@ -330,6 +359,12 @@ const gdriveService = {
             if (!isSilent) alert("Lütfen önce Google hesabınızı bağlayın.");
             return;
         }
+
+        if (this.isBackingUp) {
+            console.log("performBackup: Already backing up, skipping this request.");
+            return;
+        }
+        this.isBackingUp = true;
 
         const backupBtn = document.getElementById('btn-gdrive-backup');
         const statusEl = document.getElementById('gdrive-status-message');
@@ -388,29 +423,69 @@ const gdriveService = {
                 books: allBooksFull
             };
 
-            const fileId = await this.findBackupFile();
-            const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-            
-            let uploadUrl;
+            let fileId = this.backupFileId || await settingsDb.get('gdriveBackupFileId', null);
+            let uploadUrl = null;
+
             if (fileId) {
-                // Update Existing file: Start resumable session
-                const initResponse = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=resumable`, {
-                    method: 'PATCH',
-                    headers: {
-                        'Authorization': `Bearer ${this.accessToken}`,
-                        'Content-Type': 'application/json; charset=UTF-8'
-                    },
-                    body: JSON.stringify({
-                        name: 'endlessr_backup.json'
-                    })
-                });
-                if (!initResponse.ok) {
-                    const errText = await initResponse.text();
-                    throw new Error("Yedek güncelleme oturumu başlatılamadı: " + errText);
+                try {
+                    // Update Existing file: Start resumable session
+                    const initResponse = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=resumable`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Authorization': `Bearer ${this.accessToken}`,
+                            'Content-Type': 'application/json; charset=UTF-8'
+                        },
+                        body: JSON.stringify({
+                            name: 'endlessr_backup.json'
+                        })
+                    });
+                    if (initResponse.ok) {
+                        uploadUrl = initResponse.headers.get('Location');
+                    } else if (initResponse.status === 404) {
+                        console.warn("Cached backup file ID not found on Drive (404). Will search or create a new one.");
+                        fileId = null;
+                        this.backupFileId = null;
+                        await settingsDb.set('gdriveBackupFileId', '');
+                    } else {
+                        const errText = await initResponse.text();
+                        throw new Error("Yedek güncelleme oturumu başlatılamadı: " + errText);
+                    }
+                } catch (err) {
+                    console.error("Error checking/updating backup file by ID:", err);
+                    if (err.message && err.message.includes("başlatılamadı")) {
+                        throw err;
+                    }
                 }
-                uploadUrl = initResponse.headers.get('Location');
-            } else {
-                // Create New file: Start resumable session
+            }
+
+            // If no fileId or 404, search on Drive
+            if (!fileId) {
+                fileId = await this.findBackupFile();
+                if (fileId) {
+                    this.backupFileId = fileId;
+                    await settingsDb.set('gdriveBackupFileId', fileId);
+                    
+                    const initResponse = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=resumable`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Authorization': `Bearer ${this.accessToken}`,
+                            'Content-Type': 'application/json; charset=UTF-8'
+                        },
+                        body: JSON.stringify({
+                            name: 'endlessr_backup.json'
+                        })
+                    });
+                    if (initResponse.ok) {
+                        uploadUrl = initResponse.headers.get('Location');
+                    } else {
+                        const errText = await initResponse.text();
+                        throw new Error("Yedek güncelleme oturumu başlatılamadı (bulunan dosya için): " + errText);
+                    }
+                }
+            }
+
+            // If still no fileId or search failed, create a new file
+            if (!fileId || !uploadUrl) {
                 const initResponse = await fetch(`https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable`, {
                     method: 'POST',
                     headers: {
@@ -433,6 +508,8 @@ const gdriveService = {
                 throw new Error("Google Drive yükleme adresi alınamadı (Location header eksik).");
             }
 
+            const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+
             // Perform the actual upload PUT request
             const response = await fetch(uploadUrl, {
                 method: 'PUT',
@@ -440,6 +517,11 @@ const gdriveService = {
             });
 
             if (response.ok) {
+                const responseData = await response.json();
+                if (responseData && responseData.id) {
+                    this.backupFileId = responseData.id;
+                    await settingsDb.set('gdriveBackupFileId', responseData.id);
+                }
                 const nowStr = new Date().toLocaleString('tr-TR');
                 await settingsDb.set('gdriveLastBackupTime', nowStr);
                 this.updateUI();
@@ -459,6 +541,7 @@ const gdriveService = {
                 statusEl.textContent = `Otomatik yedekleme başarısız. Son yedek: ${lastBackup}`;
             }
         } finally {
+            this.isBackingUp = false;
             if (!isSilent && backupBtn) {
                 backupBtn.disabled = false;
                 backupBtn.innerHTML = '<i data-lucide="cloud-upload"></i> Şimdi Yedekle';
