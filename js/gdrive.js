@@ -10,6 +10,8 @@ const gdriveService = {
     backupFileId: null,
     autoBackupInterval: null,
     isBackingUp: false,
+    folderId: null,
+    isCreatingFolder: false,
 
     // Initialize Service: Check url hash for OAuth redirect token
     async init() {
@@ -21,6 +23,7 @@ const gdriveService = {
             this.accessToken = savedToken;
             this.tokenExpiry = savedExpiry;
             this.backupFileId = await settingsDb.get('gdriveBackupFileId', null);
+            this.folderId = await settingsDb.get('gdriveFolderId', null);
             await this.loadUserInfo();
             this.startPeriodicAutoBackup();
         } else {
@@ -72,6 +75,7 @@ const gdriveService = {
         await settingsDb.set('gdriveAccessToken', '');
         await settingsDb.set('gdriveTokenExpiry', 0);
         await settingsDb.set('gdriveBackupFileId', '');
+        await settingsDb.set('gdriveFolderId', '');
         this.updateUI();
         window.location.reload();
     },
@@ -81,6 +85,7 @@ const gdriveService = {
         this.tokenExpiry = null;
         this.userInfo = null;
         this.backupFileId = null;
+        this.folderId = null;
     },
 
     // Parse OAuth response from URL Hash
@@ -169,7 +174,8 @@ const gdriveService = {
                             gdriveClientId: await settingsDb.get('gdriveClientId', ''),
                             gdriveAutoSync: await settingsDb.get('gdriveAutoSync', true),
                             gdriveLastBackupTime: await settingsDb.get('gdriveLastBackupTime', 'Bilinmiyor'),
-                            gdriveBackupFileId: fileId
+                            gdriveBackupFileId: fileId,
+                            gdriveFolderId: await settingsDb.get('gdriveFolderId', '')
                         };
 
                         // Yerel IndexedDB veritabanlarını tamamen sıfırla (Drive verisini baz almak için)
