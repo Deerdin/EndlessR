@@ -955,12 +955,6 @@ const app = {
             });
         }
 
-        const btnGDriveRestore = document.getElementById('btn-gdrive-restore');
-        if (btnGDriveRestore) {
-            btnGDriveRestore.addEventListener('click', () => {
-                gdriveService.performRestore();
-            });
-        }
 
         // Google Drive Otomatik Eşitleme Switch'i
         const toggleGDriveAutoSync = document.getElementById('gdrive-auto-sync');

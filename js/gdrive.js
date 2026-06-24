@@ -109,8 +109,9 @@ const gdriveService = {
                     const accountBtn = document.querySelector('.segment-btn[data-segment="profile-account"]');
                     if (accountBtn) accountBtn.click();
                 }
-                
-                alert("Google Drive bağlantısı başarıyla kuruldu!");
+
+                // Bağlantı kurulduğunda verileri otomatik eşitle
+                await this.autoSyncOnConnect();
             }
         }
     },
@@ -133,6 +134,96 @@ const gdriveService = {
         } catch (e) {
             console.error("User profile load failed:", e);
             this.disconnect();
+        }
+    },
+
+    // Google Drive bağlandığı an çalışan otomatik veri senkronizasyonu
+    async autoSyncOnConnect() {
+        try {
+            console.log("AutoSync: Checking for existing backup on Google Drive...");
+            const fileId = await this.findBackupFile();
+            
+            if (fileId) {
+                // Drive'da yedek dosyası mevcut!
+                console.log("AutoSync: Backup found on Drive. Downloading and restoring...");
+                
+                const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+                    headers: { 'Authorization': `Bearer ${this.accessToken}` }
+                });
+
+                if (response.ok) {
+                    const backupData = await response.json();
+                    
+                    if (backupData.app === "EndlessR") {
+                        // GDrive bağlantı ayarlarını korumak için yedekle
+                        const keysToKeep = {
+                            gdriveAccessToken: await settingsDb.get('gdriveAccessToken', ''),
+                            gdriveTokenExpiry: await settingsDb.get('gdriveTokenExpiry', 0),
+                            gdriveClientId: await settingsDb.get('gdriveClientId', ''),
+                            gdriveAutoSync: await settingsDb.get('gdriveAutoSync', true),
+                            gdriveLastBackupTime: await settingsDb.get('gdriveLastBackupTime', 'Bilinmiyor')
+                        };
+
+                        // Yerel IndexedDB veritabanlarını tamamen sıfırla (Drive verisini baz almak için)
+                        await db.words.clear();
+                        await db.replacements.clear();
+                        await db.books.clear();
+                        await db.settings.clear();
+
+                        // Drive bağlantı ayarlarını geri yaz
+                        for (const [k, v] of Object.entries(keysToKeep)) {
+                            await db.settings.setItem(k, v);
+                        }
+
+                        // 1. Kelimeleri Geri Yükle
+                        if (backupData.words && Array.isArray(backupData.words)) {
+                            for (const word of backupData.words) {
+                                await db.words.setItem(word.id, word);
+                            }
+                        }
+
+                        // 2. Değişiklikleri Geri Yükle
+                        if (backupData.replacements && Array.isArray(backupData.replacements)) {
+                            for (const rep of backupData.replacements) {
+                                await db.replacements.setItem(rep.id, rep);
+                            }
+                        }
+
+                        // 3. Genel Ayarları Geri Yükle
+                        if (backupData.settings && typeof backupData.settings === 'object') {
+                            for (const [key, val] of Object.entries(backupData.settings)) {
+                                if (!Object.keys(keysToKeep).includes(key)) {
+                                    await db.settings.setItem(key, val);
+                                }
+                            }
+                        }
+
+                        // 4. Kitapları (dosya içeriği ve ilerlemeler dahil) Geri Yükle
+                        if (backupData.books && Array.isArray(backupData.books)) {
+                            for (const book of backupData.books) {
+                                const restoredBook = { ...book };
+                                if (book.file && typeof book.file === 'string') {
+                                    restoredBook.file = base64ToArrayBuffer(book.file);
+                                }
+                                await db.books.setItem(book.id, restoredBook);
+                            }
+                        }
+
+                        alert("Google Drive bağlantısı kuruldu! Buluttaki yedeğiniz tespit edildi ve yerel kütüphaneniz bulut verileriyle senkronize edildi.");
+                        window.location.reload();
+                        return;
+                    }
+                }
+                throw new Error("Yedek dosyası indirilemedi veya geçersiz.");
+            } else {
+                // Drive'da yedek dosyası yok! Bu ilk bağlantıdır, yerel verileri buluta yükle.
+                console.log("AutoSync: No backup found on Drive. Uploading current local data as initial backup...");
+                await this.performBackup(true);
+                alert("Google Drive bağlantısı kuruldu! Bulutta yedek bulunamadı. Mevcut yerel verileriniz ilk yedek olarak buluta yüklendi.");
+            }
+        } catch (e) {
+            console.error("AutoSync failed:", e);
+            alert("Google Drive bağlantısı kuruldu fakat otomatik veri eşitlemesi esnasında hata oluştu: " + e.message);
         }
     },
 
