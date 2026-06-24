@@ -364,32 +364,16 @@ const gdriveService = {
             const allBooksFull = [];
             const bookKeys = await db.books.keys();
             for (const key of bookKeys) {
-                try {
-                    const book = await db.books.getItem(key);
-                    if (book) {
-                        let base64File = null;
-                        if (book.file) {
-                            try {
-                                base64File = await arrayBufferToBase64Async(book.file);
-                            } catch (convErr) {
-                                console.error(`Kitap (ID: ${key}) dosyası base64'e dönüştürülürken hata:`, convErr);
-                            }
-                        }
-                        allBooksFull.push({
-                            ...book,
-                            file: base64File
-                        });
+                const book = await db.books.getItem(key);
+                if (book) {
+                    let base64File = null;
+                    if (book.file) {
+                        base64File = await arrayBufferToBase64Async(book.file);
                     }
-                } catch (readErr) {
-                    console.error(`Kitap (ID: ${key}) veritabanından okunurken hata oluştu, yedeğe sadece üst veriler ekleniyor:`, readErr);
-                    // Find metadata from allBooksMetadata to preserve stats/progress
-                    const meta = allBooksMetadata.find(m => m.id === key);
-                    if (meta) {
-                        allBooksFull.push({
-                            ...meta,
-                            file: null
-                        });
-                    }
+                    allBooksFull.push({
+                        ...book,
+                        file: base64File // Overwrite ArrayBuffer with base64 string
+                    });
                 }
             }
 
