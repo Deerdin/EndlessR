@@ -46,11 +46,15 @@ const booksDb = {
             const keys = await db.books.keys();
             const books = [];
             for (const key of keys) {
-                const book = await db.books.getItem(key);
-                if (book) {
-                    // Dosya verisini (file) arayüzde taşımamak için kopyalayıp çıkarıyoruz
-                    const { file, ...metadata } = book;
-                    books.push(metadata);
+                try {
+                    const book = await db.books.getItem(key);
+                    if (book) {
+                        // Dosya verisini (file) arayüzde taşımamak için kopyalayıp çıkarıyoruz
+                        const { file, ...metadata } = book;
+                        books.push(metadata);
+                    }
+                } catch (singleBookErr) {
+                    console.error(`Kitap (ID: ${key}) veritabanından okunurken hata oluştu, atlanıyor:`, singleBookErr);
                 }
             }
             // Eklenme tarihine göre sırala (yeniden eskiye)
