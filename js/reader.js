@@ -2369,8 +2369,8 @@ const reader = {
         this.hidePopover();
 
         // Okuyucudan çıkıldığında son ilerlemeyi buluta yedekle
-        if (typeof gdriveService !== 'undefined') {
-            gdriveService.performBackup(true);
+        if (typeof supabaseService !== 'undefined') {
+            supabaseService.performBackup(true);
         }
 
         // Ekran butonuna basarak kapatıldıysa tarayıcı geçmişini temizle ve eşitle

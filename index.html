@@ -26,6 +26,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <!-- LocalForage (IndexedDB Wrapper) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+    <!-- Supabase JS Client SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -142,61 +144,68 @@
                         </div>
                     </div>
 
-                    <!-- Google Drive Eşitleme Kartı -->
+                    <!-- Supabase Bulut Eşitleme Kartı -->
                     <div class="settings-group-profile" style="margin-top: 16px;">
-                        <h3><i data-lucide="cloud"></i> Google Drive Yedekleme</h3>
+                        <h3><i data-lucide="cloud"></i> Supabase Bulut Senkronizasyonu</h3>
                         <p class="settings-description" style="margin-bottom: 12px;">
-                            Kelimelerinizi, kelime değişimlerinizi ve okuma ayarlarınızı Google Drive hesabınıza yedekleyip diğer cihazlarınızla eşitleyebilirsiniz.
+                            Kelimelerinizi, kelime değişimlerinizi, okuma ilerlemelerinizi ve ayarlarınızı Supabase bulut veritabanına yedekleyip tüm cihazlarınız arasında anında eşitleyebilirsiniz.
                         </p>
                         
                         <!-- Disconnected State -->
-                        <div id="gdrive-disconnected-state" style="display: flex; flex-direction: column; gap: 12px;">
+                        <div id="supabase-disconnected-state" style="display: flex; flex-direction: column; gap: 12px;">
                             <div class="input-group">
-                                <label for="gdrive-client-id">Google OAuth Client ID</label>
-                                <input type="text" id="gdrive-client-id" placeholder="1234567890-abc123xyz.apps.googleusercontent.com" style="padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 12px; background: var(--bg-surface);">
-                                <span style="font-size: 10px; color: var(--text-muted); line-height: 1.3;">
-                                    Google Drive API bağlantısı için kendi Client ID'nizi kullanabilirsiniz. Yerel kullanım için varsayılan bir ID tanımlıdır.
-                                </span>
+                                <label for="supabase-email">E-posta Adresi</label>
+                                <input type="email" id="supabase-email" placeholder="ornek@email.com" style="padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 13px; background: var(--bg-surface);">
                             </div>
-                            <button id="btn-gdrive-connect" class="action-btn" style="background: linear-gradient(135deg, #4285F4 0%, #34A853 100%); box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);">
-                                <i data-lucide="log-in"></i> Google Hesabını Bağla
-                            </button>
+                            <div class="input-group">
+                                <label for="supabase-password">Şifre</label>
+                                <input type="password" id="supabase-password" placeholder="••••••••" style="padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 13px; background: var(--bg-surface);">
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <button id="btn-supabase-login" class="action-btn" style="flex: 1; background: var(--accent-gradient); box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3); justify-content: center; display: flex; align-items: center; gap: 6px;">
+                                    <i data-lucide="log-in" style="width: 16px; height: 16px;"></i> Giriş Yap
+                                </button>
+                                <button id="btn-supabase-register" class="action-outline-btn-sm" style="flex: 1; justify-content: center; display: flex; align-items: center; gap: 6px;">
+                                    <i data-lucide="user-plus" style="width: 16px; height: 16px;"></i> Kayıt Ol
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Connected State -->
-                        <div id="gdrive-connected-state" style="display: none; flex-direction: column; gap: 12px;">
-                            <div class="gdrive-user-card" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: rgba(0,0,0,0.15); border-radius: var(--radius-md); border: 1px solid var(--border-color);">
-                                <img id="gdrive-user-avatar" src="" alt="Google Avatar" style="width: 40px; height: 40px; border-radius: 50%; display: none;">
-                                <div id="gdrive-user-avatar-placeholder" style="width: 40px; height: 40px; border-radius: 50%; background: var(--accent-gradient); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">G</div>
-                                <div style="display: flex; flex-direction: column; gap: 2px;">
-                                    <span id="gdrive-user-name" style="font-size: 14px; font-weight: 600; color: var(--text-primary);">Google Kullanıcısı</span>
-                                    <span id="gdrive-user-email" style="font-size: 11px; color: var(--text-secondary);">E-posta yükleniyor...</span>
+                        <div id="supabase-connected-state" style="display: none; flex-direction: column; gap: 12px;">
+                            <div class="supabase-user-card" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: rgba(0,0,0,0.15); border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+                                <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--accent-gradient); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
+                                    <i data-lucide="user" style="width: 20px; height: 20px;"></i>
+                                </div>
+                                <div style="display: flex; flex-direction: column; gap: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: calc(100% - 52px);">
+                                    <span style="font-size: 11px; color: var(--text-secondary);">Aktif Bulut Hesabı</span>
+                                    <span id="supabase-user-email" style="font-size: 14px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis;">yükleniyor...</span>
                                 </div>
                             </div>
 
                             <div style="display: flex; gap: 8px;">
-                                <button id="btn-gdrive-backup" class="action-btn" style="width: 100%; padding: 10px; font-size: 13px;">
-                                    <i data-lucide="cloud-upload"></i> Şimdi Yedekle
+                                <button id="btn-supabase-backup" class="action-btn" style="width: 100%; padding: 10px; font-size: 13px; justify-content: center; display: flex; align-items: center; gap: 6px;">
+                                    <i data-lucide="cloud-upload" style="width: 16px; height: 16px;"></i> Şimdi Yedekle
                                 </button>
                             </div>
                             
                             <div class="setting-toggle-row" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(0,0,0,0.1); border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
                                 <div style="display: flex; flex-direction: column; gap: 2px;">
                                     <span style="font-size: 13px; font-weight: 600; color: var(--text-primary);">Otomatik Yedekleme</span>
-                                    <span style="font-size: 10px; color: var(--text-secondary);">Değişiklikleri otomatik olarak Drive'a kaydeder.</span>
+                                    <span style="font-size: 10px; color: var(--text-secondary);">Değişiklikleri otomatik olarak buluta kaydeder.</span>
                                 </div>
                                 <label class="switch">
-                                    <input type="checkbox" id="gdrive-auto-sync" checked>
+                                    <input type="checkbox" id="supabase-auto-sync" checked>
                                     <span class="switch-slider"></span>
                                 </label>
                             </div>
                             
-                            <div id="gdrive-status-message" style="font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 4px;">
+                            <div id="supabase-status-message" style="font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 4px;">
                                 Son yedekleme: Bilinmiyor
                             </div>
 
-                            <button id="btn-gdrive-disconnect" class="action-outline-btn-sm" style="margin-top: 8px; width: 100%; border-color: rgba(239, 68, 68, 0.3); color: #ef4444; justify-content: center;">
-                                <i data-lucide="log-out"></i> Bağlantıyı Kes
+                            <button id="btn-supabase-disconnect" class="action-outline-btn-sm" style="margin-top: 8px; width: 100%; border-color: rgba(239, 68, 68, 0.3); color: #ef4444; justify-content: center; display: flex; align-items: center; gap: 6px;">
+                                <i data-lucide="log-out" style="width: 16px; height: 16px;"></i> Bağlantıyı Kes
                             </button>
                         </div>
                     </div>
@@ -694,7 +703,7 @@
     <script src="js/utils.js"></script>
     <script src="js/translate.js"></script>
     <script src="js/reader.js"></script>
-    <script src="js/gdrive.js"></script>
+    <script src="js/supabase.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

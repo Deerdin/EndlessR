@@ -69,9 +69,9 @@ const app = {
                     this.handleHardwareBack();
                 });
                 App.addListener('appStateChange', (state) => {
-                    if (!state.isActive && typeof gdriveService !== 'undefined') {
+                    if (!state.isActive && typeof supabaseService !== 'undefined') {
                         console.log("Capacitor auto-sync: App moved to background, performing backup...");
-                        gdriveService.performBackup(true);
+                        supabaseService.performBackup(true);
                     }
                 });
             }
@@ -83,9 +83,9 @@ const app = {
         await this.loadSettings();
         await this.loadReplacements();
 
-        // Google Drive Eşitleme Servisini Başlat
-        if (typeof gdriveService !== 'undefined') {
-            await gdriveService.init();
+        // Supabase Eşitleme Servisini Başlat
+        if (typeof supabaseService !== 'undefined') {
+            await supabaseService.init();
         }
 
         // 3. Olay Dinleyicilerini Kur
@@ -1041,36 +1041,79 @@ const app = {
             });
         }
 
-        // Google Drive Eşitleme Butonları
-        const btnGDriveConnect = document.getElementById('btn-gdrive-connect');
-        if (btnGDriveConnect) {
-            btnGDriveConnect.addEventListener('click', () => {
-                gdriveService.connect();
+        // Supabase Eşitleme Butonları ve Form Girişleri
+        const btnSupabaseLogin = document.getElementById('btn-supabase-login');
+        if (btnSupabaseLogin) {
+            btnSupabaseLogin.addEventListener('click', async () => {
+                const email = document.getElementById('supabase-email').value.trim();
+                const password = document.getElementById('supabase-password').value;
+                if (!email || !password) {
+                    alert("Lütfen e-posta ve şifrenizi girin.");
+                    return;
+                }
+                
+                btnSupabaseLogin.disabled = true;
+                const originalText = btnSupabaseLogin.innerHTML;
+                btnSupabaseLogin.innerHTML = '<i data-lucide="loader-2" class="spin-icon"></i> Giriş Yapılıyor...';
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+
+                const result = await supabaseService.login(email, password);
+                if (result.error) {
+                    alert("Giriş başarısız: " + result.error);
+                    btnSupabaseLogin.disabled = false;
+                    btnSupabaseLogin.innerHTML = originalText;
+                    if (typeof lucide !== 'undefined') lucide.createIcons();
+                }
             });
         }
 
-        const btnGDriveDisconnect = document.getElementById('btn-gdrive-disconnect');
-        if (btnGDriveDisconnect) {
-            btnGDriveDisconnect.addEventListener('click', () => {
-                gdriveService.disconnect();
+        const btnSupabaseRegister = document.getElementById('btn-supabase-register');
+        if (btnSupabaseRegister) {
+            btnSupabaseRegister.addEventListener('click', async () => {
+                const email = document.getElementById('supabase-email').value.trim();
+                const password = document.getElementById('supabase-password').value;
+                if (!email || !password) {
+                    alert("Lütfen e-posta ve şifrenizi girin.");
+                    return;
+                }
+                if (password.length < 6) {
+                    alert("Şifreniz en az 6 karakter olmalıdır.");
+                    return;
+                }
+
+                btnSupabaseRegister.disabled = true;
+                const originalText = btnSupabaseRegister.innerHTML;
+                btnSupabaseRegister.innerHTML = '<i data-lucide="loader-2" class="spin-icon"></i> Kaydediliyor...';
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+
+                const result = await supabaseService.register(email, password);
+                btnSupabaseRegister.disabled = false;
+                btnSupabaseRegister.innerHTML = originalText;
+                if (typeof lucide !== 'undefined') lucide.createIcons();
             });
         }
 
-        const btnGDriveBackup = document.getElementById('btn-gdrive-backup');
-        if (btnGDriveBackup) {
-            btnGDriveBackup.addEventListener('click', () => {
-                gdriveService.performBackup();
+        const btnSupabaseDisconnect = document.getElementById('btn-supabase-disconnect');
+        if (btnSupabaseDisconnect) {
+            btnSupabaseDisconnect.addEventListener('click', () => {
+                supabaseService.disconnect();
             });
         }
 
+        const btnSupabaseBackup = document.getElementById('btn-supabase-backup');
+        if (btnSupabaseBackup) {
+            btnSupabaseBackup.addEventListener('click', () => {
+                supabaseService.performBackup();
+            });
+        }
 
-        // Google Drive Otomatik Eşitleme Switch'i
-        const toggleGDriveAutoSync = document.getElementById('gdrive-auto-sync');
-        if (toggleGDriveAutoSync) {
-            toggleGDriveAutoSync.addEventListener('change', async (e) => {
-                await settingsDb.set('gdriveAutoSync', e.target.checked);
+        // Supabase Otomatik Eşitleme Switch'i
+        const toggleSupabaseAutoSync = document.getElementById('supabase-auto-sync');
+        if (toggleSupabaseAutoSync) {
+            toggleSupabaseAutoSync.addEventListener('change', async (e) => {
+                await settingsDb.set('supabaseAutoSync', e.target.checked);
                 if (e.target.checked) {
-                    gdriveService.scheduleAutoBackup();
+                    supabaseService.scheduleAutoBackup();
                 }
             });
         }
@@ -1160,11 +1203,11 @@ const app = {
             }
         });
 
-        // Tarayıcı sekmesi kapatıldığında veya gizlendiğinde verileri Drive'a yedekle
+        // Tarayıcı sekmesi kapatıldığında veya gizlendiğinde verileri buluta yedekle
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'hidden' && typeof gdriveService !== 'undefined') {
+            if (document.visibilityState === 'hidden' && typeof supabaseService !== 'undefined') {
                 console.log("Browser visibility auto-sync: Tab hidden, performing backup...");
-                gdriveService.performBackup(true);
+                supabaseService.performBackup(true);
             }
         });
 
