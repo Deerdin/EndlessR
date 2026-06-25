@@ -35,6 +35,9 @@ const supabaseService = {
             const { data } = await this.client.auth.getSession();
             this.session = data.session;
             this.updateUI();
+            if (this.session) {
+                this.startPeriodicAutoBackup();
+            }
         } else {
             console.error("Supabase SDK is not loaded.");
         }
@@ -77,7 +80,7 @@ const supabaseService = {
             const { data, error } = await this.client.auth.signUp({ email, password });
             if (error) throw error;
             
-            alert("Kayıt başarılı! E-posta adresinize bir doğrulama bağlantısı gönderilmiş olabilir (varsayılan ayarlara göre doğrulamadan da girebilirsiniz). Giriş yapmayı deneyebilirsiniz.");
+            alert("Kayıt başarılı! Giriş yapmayı deneyebilirsiniz. Eğer giriş esnasında doğrulama hatası alırsanız ve mailinize gelen doğrulama linki çalışmazsa (localhost sunucumuza yönlendirdiği için), lütfen Supabase panelinizden 'Authentication -> Settings -> Providers -> Email -> Confirm email' seçeneğini devre dışı bırakın. Bu sayede doğrulama e-postası gerekmeden anında giriş yapabilirsiniz.");
             return { success: true };
         } catch (e) {
             console.error("Registration failed:", e);
@@ -264,11 +267,18 @@ const supabaseService = {
             }
         } catch (e) {
             console.error("Backup failed:", e);
+            let userFriendlyMsg = e.message || "Bilinmeyen bir hata oluştu.";
+            if (userFriendlyMsg.includes("bucket") || userFriendlyMsg.includes("not_found") || userFriendlyMsg.includes("not found")) {
+                userFriendlyMsg = "Supabase Storage panelinizde 'backups' adında özel (private) bir klasör/bucket bulunamadı. Lütfen Supabase Storage panelinde 'backups' adında bir bucket oluşturun ve RLS politikalarından oturum açmış (authenticated) kullanıcılara yazma/okuma izni verin.";
+            } else if (userFriendlyMsg.includes("policy") || userFriendlyMsg.includes("row-level-security") || userFriendlyMsg.includes("permission") || userFriendlyMsg.includes("Access denied")) {
+                userFriendlyMsg = "Supabase Storage RLS politikaları yazmaya izin vermiyor. Lütfen 'backups' bucket'ı için oturum açmış (authenticated) kullanıcılara yükleme/güncelleme (insert/update) izni veren bir RLS politikası tanımlayın.";
+            }
+            
             if (!isSilent) {
-                alert("Yedekleme hatası: " + e.message);
+                alert("Yedekleme Hatası: " + userFriendlyMsg);
             } else if (statusEl) {
                 const lastBackup = await settingsDb.get('supabaseLastBackupTime', 'Bilinmiyor');
-                statusEl.textContent = `Otomatik yedekleme başarısız. Son yedek: ${lastBackup}`;
+                statusEl.textContent = `Otomatik yedekleme başarısız. Hata: ${userFriendlyMsg.substring(0, 50)}...`;
             }
         } finally {
             this.isBackingUp = false;

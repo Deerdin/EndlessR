@@ -161,6 +161,20 @@
                                 <label for="supabase-password">Şifre</label>
                                 <input type="password" id="supabase-password" placeholder="••••••••" style="padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 13px; background: var(--bg-surface);">
                             </div>
+                            <div class="input-group" id="group-supabase-confirm-password" style="display: none;">
+                                <label for="supabase-confirm-password">Şifre Tekrarı</label>
+                                <input type="password" id="supabase-confirm-password" placeholder="••••••••" style="padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 13px; background: var(--bg-surface);">
+                            </div>
+                            <div class="input-group" id="group-supabase-captcha">
+                                <label for="supabase-captcha-input">Doğrulama Sorusu (Bot Koruması)</label>
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <span id="supabase-captcha-text" style="padding: 10px; background: rgba(124, 58, 237, 0.1); border: 1px solid rgba(124, 58, 237, 0.2); border-radius: var(--radius-sm); color: var(--accent-color); font-weight: bold; font-size: 14px; letter-spacing: 1px; user-select: none; min-width: 70px; text-align: center;">...</span>
+                                    <input type="text" id="supabase-captcha-input" placeholder="Sonuç" style="flex: 1; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 13px; background: var(--bg-surface);">
+                                    <button type="button" id="btn-supabase-captcha-refresh" class="icon-btn glass" style="width: 38px; height: 38px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); cursor: pointer;" title="Doğrulamayı Yenile">
+                                        <i data-lucide="refresh-cw" style="width: 16px; height: 16px;"></i>
+                                    </button>
+                                </div>
+                            </div>
                             <div style="display: flex; gap: 8px;">
                                 <button id="btn-supabase-login" class="action-btn" style="flex: 1; background: var(--accent-gradient); box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3); justify-content: center; display: flex; align-items: center; gap: 6px;">
                                     <i data-lucide="log-in" style="width: 16px; height: 16px;"></i> Giriş Yap

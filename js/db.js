@@ -75,7 +75,7 @@ const booksDb = {
     async saveBook(book) {
         try {
             await db.books.setItem(book.id, book);
-            if (typeof gdriveService !== 'undefined') gdriveService.scheduleAutoBackup();
+            if (typeof supabaseService !== 'undefined') supabaseService.scheduleAutoBackup();
             return true;
         } catch (err) {
             console.error("Kitap kaydedilirken hata oluştu:", err);
@@ -87,7 +87,7 @@ const booksDb = {
     async deleteBook(id) {
         try {
             await db.books.removeItem(id);
-            if (typeof gdriveService !== 'undefined') gdriveService.scheduleAutoBackup();
+            if (typeof supabaseService !== 'undefined') supabaseService.scheduleAutoBackup();
             return true;
         } catch (err) {
             console.error("Kitap silinirken hata oluştu:", err);
@@ -150,7 +150,7 @@ const wordsDb = {
                 bookId: wordObj.bookId || "",
                 addedAt: Date.now()
             });
-            if (typeof gdriveService !== 'undefined') gdriveService.scheduleAutoBackup();
+            if (typeof supabaseService !== 'undefined') supabaseService.scheduleAutoBackup();
             return true;
         } catch (err) {
             console.error("Kelime kaydedilirken hata:", err);
@@ -162,7 +162,7 @@ const wordsDb = {
     async deleteWord(id) {
         try {
             await db.words.removeItem(id);
-            if (typeof gdriveService !== 'undefined') gdriveService.scheduleAutoBackup();
+            if (typeof supabaseService !== 'undefined') supabaseService.scheduleAutoBackup();
             return true;
         } catch (err) {
             console.error("Kelime silinirken hata:", err);
@@ -188,10 +188,13 @@ const settingsDb = {
     async set(key, value) {
         try {
             await db.settings.setItem(key, value);
-            // Trigger auto-backup for settings (excluding gdrive configuration keys to avoid loops)
-            const gdriveKeys = ['gdriveAccessToken', 'gdriveTokenExpiry', 'gdriveLastBackupTime', 'gdriveClientId', 'gdriveAutoSync'];
-            if (!gdriveKeys.includes(key) && typeof gdriveService !== 'undefined') {
-                gdriveService.scheduleAutoBackup();
+            // Trigger auto-backup for settings (excluding sync configuration keys to avoid loops)
+            const excludeKeys = [
+                'gdriveAccessToken', 'gdriveTokenExpiry', 'gdriveLastBackupTime', 'gdriveClientId', 'gdriveAutoSync',
+                'supabaseLastBackupTime'
+            ];
+            if (!excludeKeys.includes(key) && typeof supabaseService !== 'undefined') {
+                supabaseService.scheduleAutoBackup();
             }
             return true;
         } catch (err) {
@@ -245,7 +248,7 @@ const replacementsDb = {
                 bookId: bookId, // Belirli bir kitaba bağlı (boş ise global)
                 addedAt: Date.now()
             });
-            if (typeof gdriveService !== 'undefined') gdriveService.scheduleAutoBackup();
+            if (typeof supabaseService !== 'undefined') supabaseService.scheduleAutoBackup();
             return true;
         } catch (err) {
             console.error("Değişiklik kaydedilirken hata:", err);
@@ -257,7 +260,7 @@ const replacementsDb = {
     async deleteReplacement(id) {
         try {
             await db.replacements.removeItem(id);
-            if (typeof gdriveService !== 'undefined') gdriveService.scheduleAutoBackup();
+            if (typeof supabaseService !== 'undefined') supabaseService.scheduleAutoBackup();
             return true;
         } catch (err) {
             console.error("Değişiklik silinirken hata:", err);

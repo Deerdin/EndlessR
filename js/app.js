@@ -1041,14 +1041,74 @@ const app = {
             });
         }
 
-        // Supabase Eşitleme Butonları ve Form Girişleri
+        // Supabase Eşitleme Butonları, Captcha ve Form Girişleri
+        let currentCaptchaAnswer = null;
+
+        function generateCaptcha() {
+            const num1 = Math.floor(Math.random() * 9) + 1; // 1-9
+            const num2 = Math.floor(Math.random() * 9) + 1; // 1-9
+            const operators = ['+', '-'];
+            const operator = operators[Math.floor(Math.random() * operators.length)];
+            
+            let expressionText = '';
+            if (operator === '+') {
+                expressionText = `${num1} + ${num2} =`;
+                currentCaptchaAnswer = num1 + num2;
+            } else {
+                const max = Math.max(num1, num2);
+                const min = Math.min(num1, num2);
+                expressionText = `${max} - ${min} =`;
+                currentCaptchaAnswer = max - min;
+            }
+            
+            const captchaTextEl = document.getElementById('supabase-captcha-text');
+            if (captchaTextEl) {
+                captchaTextEl.textContent = expressionText;
+            }
+            const captchaInputEl = document.getElementById('supabase-captcha-input');
+            if (captchaInputEl) {
+                captchaInputEl.value = '';
+            }
+        }
+
+        // İlk sayfa açılışında captcha üret
+        generateCaptcha();
+
+        const btnCaptchaRefresh = document.getElementById('btn-supabase-captcha-refresh');
+        if (btnCaptchaRefresh) {
+            btnCaptchaRefresh.addEventListener('click', () => {
+                generateCaptcha();
+            });
+        }
+
+        function validateCaptcha() {
+            const inputEl = document.getElementById('supabase-captcha-input');
+            if (!inputEl) return true;
+            const userVal = parseInt(inputEl.value.trim(), 10);
+            if (isNaN(userVal) || userVal !== currentCaptchaAnswer) {
+                alert("Güvenlik doğrulama sonucu yanlış. Lütfen tekrar deneyin.");
+                generateCaptcha();
+                return false;
+            }
+            return true;
+        }
+
         const btnSupabaseLogin = document.getElementById('btn-supabase-login');
         if (btnSupabaseLogin) {
             btnSupabaseLogin.addEventListener('click', async () => {
+                // Giriş yaparken şifre tekrarı alanını gizle
+                const groupConfirm = document.getElementById('group-supabase-confirm-password');
+                if (groupConfirm) groupConfirm.style.display = 'none';
+
                 const email = document.getElementById('supabase-email').value.trim();
                 const password = document.getElementById('supabase-password').value;
                 if (!email || !password) {
                     alert("Lütfen e-posta ve şifrenizi girin.");
+                    return;
+                }
+
+                // Captcha doğrulaması
+                if (!validateCaptcha()) {
                     return;
                 }
                 
@@ -1058,6 +1118,10 @@ const app = {
                 if (typeof lucide !== 'undefined') lucide.createIcons();
 
                 const result = await supabaseService.login(email, password);
+                
+                // Captcha yenile
+                generateCaptcha();
+                
                 if (result.error) {
                     alert("Giriş başarısız: " + result.error);
                     btnSupabaseLogin.disabled = false;
@@ -1070,14 +1134,38 @@ const app = {
         const btnSupabaseRegister = document.getElementById('btn-supabase-register');
         if (btnSupabaseRegister) {
             btnSupabaseRegister.addEventListener('click', async () => {
+                const groupConfirm = document.getElementById('group-supabase-confirm-password');
+                
+                // Eğer şifre onaylama alanı gizliyse, alanı aç ve kullanıcıyı yönlendir
+                if (groupConfirm && groupConfirm.style.display === 'none') {
+                    groupConfirm.style.display = 'block';
+                    const confirmInput = document.getElementById('supabase-confirm-password');
+                    if (confirmInput) confirmInput.focus();
+                    alert("Kayıt olmak için lütfen şifrenizi onaylayın (alt kısımda beliren 'Şifre Tekrarı' alanını doldurun).");
+                    return;
+                }
+
                 const email = document.getElementById('supabase-email').value.trim();
                 const password = document.getElementById('supabase-password').value;
-                if (!email || !password) {
-                    alert("Lütfen e-posta ve şifrenizi girin.");
+                const confirmInputEl = document.getElementById('supabase-confirm-password');
+                const confirmPassword = confirmInputEl ? confirmInputEl.value : '';
+
+                if (!email || !password || !confirmPassword) {
+                    alert("Lütfen e-posta, şifre ve şifre tekrarını girin.");
+                    return;
+                }
+                if (password !== confirmPassword) {
+                    alert("Şifreler uyuşmuyor! Lütfen kontrol edin.");
+                    if (confirmInputEl) confirmInputEl.focus();
                     return;
                 }
                 if (password.length < 6) {
                     alert("Şifreniz en az 6 karakter olmalıdır.");
+                    return;
+                }
+
+                // Captcha doğrulaması
+                if (!validateCaptcha()) {
                     return;
                 }
 
@@ -1089,6 +1177,9 @@ const app = {
                 const result = await supabaseService.register(email, password);
                 btnSupabaseRegister.disabled = false;
                 btnSupabaseRegister.innerHTML = originalText;
+                
+                // Captcha yenile
+                generateCaptcha();
                 if (typeof lucide !== 'undefined') lucide.createIcons();
             });
         }
