@@ -173,7 +173,7 @@ const app = {
                 
                 await this.loadLibrary();
             } else {
-                alert("Kitap silinirken bir hata oluştu.");
+                alert("Kitap silinemedi.");
             }
         }
     },
@@ -287,7 +287,7 @@ const app = {
         const openaiKey = document.getElementById('openai-key').value;
 
         await settingsDb.saveApiKeys(geminiKey, openaiKey);
-        alert("API anahtarları güvenli şekilde kaydedildi!");
+        alert("API anahtarları kaydedildi.");
         
         if (typeof reader !== 'undefined' && reader.updateTranslationSettingsUI) {
             await reader.updateTranslationSettingsUI();
@@ -333,7 +333,7 @@ const app = {
         // Dosya türü kontrolü
         const fileExt = file.name.split('.').pop().toLowerCase();
         if (fileExt !== 'epub' && fileExt !== 'pdf') {
-            alert("Lütfen sadece .epub veya .pdf uzantılı dosyalar yükleyin.");
+            alert("Sadece .epub veya .pdf dosyaları yüklenebilir.");
             return;
         }
 
@@ -380,7 +380,7 @@ const app = {
                 await booksDb.saveBook(newBook);
                 
                 // Başarı mesajı ve yenileme
-                alert(`"${newBook.title}" başarıyla yüklendi!`);
+                alert("Kitap yüklendi.");
                 await this.loadLibrary();
             };
 
@@ -392,7 +392,7 @@ const app = {
 
         } catch (err) {
             console.error("Yükleme Hatası:", err);
-            alert("Dosya yüklenemedi: " + err.message);
+            alert("Dosya yüklenemedi.");
             await this.loadLibrary();
         }
     },
@@ -631,7 +631,7 @@ const app = {
                 const context = document.getElementById('manual-context').value.trim();
 
                 if (!word || !meaning) {
-                    alert("Lütfen en azından kelimeyi ve anlamını girin.");
+                    alert("Lütfen alanları doldurun.");
                     return;
                 }
 
@@ -650,7 +650,7 @@ const app = {
                     if (modal) modal.style.display = 'none';
                     await this.loadWords();
                 } else {
-                    alert("Kelime kaydedilirken bir hata oluştu.");
+                    alert("Kelime kaydedilemedi.");
                 }
             });
         }
@@ -732,7 +732,7 @@ const app = {
                         reader.closeReader();
                         app.loadLibrary();
                     } else {
-                        alert("Kitap silinirken bir hata oluştu.");
+                        alert("Kitap silinemedi.");
                     }
                 }
             }
@@ -1007,7 +1007,7 @@ const app = {
                 const replacedText = document.getElementById('replace-new-input').value.trim();
                 
                 if (!originalText || !replacedText) {
-                    alert("Lütfen yeni metni girin.");
+                    alert("Lütfen alanı doldurun.");
                     return;
                 }
                 
@@ -1036,7 +1036,7 @@ const app = {
                         }
                     }
                 } else {
-                    alert("Değişiklik kaydedilirken hata oluştu.");
+                    alert("Değişiklik kaydedilemedi.");
                 }
             });
         }
@@ -1086,7 +1086,7 @@ const app = {
             if (!inputEl) return true;
             const userVal = parseInt(inputEl.value.trim(), 10);
             if (isNaN(userVal) || userVal !== currentCaptchaAnswer) {
-                alert("Güvenlik doğrulama sonucu yanlış. Lütfen tekrar deneyin.");
+                alert("Doğrulama kodu yanlış.");
                 generateCaptcha();
                 return false;
             }
@@ -1123,7 +1123,7 @@ const app = {
                 generateCaptcha();
                 
                 if (result.error) {
-                    alert("Giriş başarısız: " + result.error);
+                    alert("Giriş başarısız.");
                     btnSupabaseLogin.disabled = false;
                     btnSupabaseLogin.innerHTML = originalText;
                     if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -1141,7 +1141,7 @@ const app = {
                     groupConfirm.style.display = 'block';
                     const confirmInput = document.getElementById('supabase-confirm-password');
                     if (confirmInput) confirmInput.focus();
-                    alert("Kayıt olmak için lütfen şifrenizi onaylayın (alt kısımda beliren 'Şifre Tekrarı' alanını doldurun).");
+                    alert("Lütfen şifrenizi tekrar girerek onaylayın.");
                     return;
                 }
 
@@ -1151,16 +1151,16 @@ const app = {
                 const confirmPassword = confirmInputEl ? confirmInputEl.value : '';
 
                 if (!email || !password || !confirmPassword) {
-                    alert("Lütfen e-posta, şifre ve şifre tekrarını girin.");
+                    alert("Lütfen tüm alanları doldurun.");
                     return;
                 }
                 if (password !== confirmPassword) {
-                    alert("Şifreler uyuşmuyor! Lütfen kontrol edin.");
+                    alert("Şifreler uyuşmuyor.");
                     if (confirmInputEl) confirmInputEl.focus();
                     return;
                 }
                 if (password.length < 6) {
-                    alert("Şifreniz en az 6 karakter olmalıdır.");
+                    alert("Şifre en az 6 karakter olmalıdır.");
                     return;
                 }
 
@@ -1357,7 +1357,7 @@ const app = {
                 const favCount = allBooks.filter(b => b.isFavorite).length;
                 
                 if (!book.isFavorite && favCount >= 5) {
-                    alert("En fazla 5 kitabı favorilere ekleyebilirsiniz. Lütfen önce başka bir kitabın favori durumunu kaldırın.");
+                    alert("En fazla 5 favori kitap seçilebilir.");
                     return;
                 }
                 
@@ -1457,7 +1457,7 @@ const app = {
                     }
                 }
             } else {
-                alert("Değişiklik silinirken bir hata oluştu.");
+                alert("Değişiklik silinemedi.");
             }
         }
     },

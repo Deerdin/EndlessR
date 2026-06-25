@@ -42,7 +42,7 @@ const reader = {
 
             // Eğer kitap dosyası yoksa (favori olmayan, buluttan eksik geri yüklenen kitap)
             if (!book.file) {
-                alert("Bu kitap dosyası cihazınızda bulunamadı. Bulut yedeğinde yalnızca en fazla 5 adet olan favori kitaplar saklanır. Okumak için lütfen bu kitabı (.epub/.pdf) kütüphanenize tekrar yükleyin.");
+                alert("Kitap dosyası bulunamadı.");
                 return;
             }
 
@@ -173,7 +173,7 @@ const reader = {
 
         } catch (err) {
             console.error("Kitap açılırken hata:", err);
-            alert("Kitap yüklenemedi: " + err.message);
+            alert("Kitap yüklenemedi.");
             this.closeReader();
         }
     },
@@ -1192,12 +1192,12 @@ const reader = {
         });
 
         if (success) {
-            alert(`"${word}" kelimesi sözlüğünüze eklendi!`);
+            alert("Kelime eklendi.");
             this.hidePopover();
             // Kelimelerim ekranını yenile
             if (window.app) window.app.loadWords();
         } else {
-            alert("Kelime kaydedilirken bir hata oluştu.");
+            alert("Kelime kaydedilemedi.");
         }
     },
 
@@ -1709,7 +1709,7 @@ const reader = {
                 console.error("AI batch translation failed, falling back to Google:", err);
                 if (!window.geminiAlertShown) {
                     window.geminiAlertShown = true;
-                    alert("AI Çevirisi başarısız oldu:\n" + err.message + "\n\nNot: Sistem otomatik olarak standart Google Çevirisine geçiş yapacaktır.");
+                    alert("Standart çeviriye geçildi.");
                     setTimeout(() => { window.geminiAlertShown = false; }, 10000);
                 }
             }
@@ -1964,7 +1964,7 @@ const reader = {
     // Sesli Kitap Okuma Başlat (TTS)
     async startTTS() {
         if (!('speechSynthesis' in window)) {
-            alert("Cihazınız Sesli Okuma (TTS) özelliğini desteklemiyor.");
+            alert("Sesli okuma desteklenmiyor.");
             return;
         }
 
@@ -2077,7 +2077,7 @@ const reader = {
                 window.speechSynthesis.speak(utterance);
             } catch (speechErr) {
                 console.error("Failed to call speechSynthesis.speak:", speechErr);
-                alert("Seslendirme başlatılamadı: " + speechErr.message);
+                alert("Seslendirme başlatılamadı.");
                 this.stopTTS();
             }
             
@@ -2088,7 +2088,7 @@ const reader = {
                 lucide.createIcons();
             }
         } else {
-            alert("Okunacak metin bulunamadı.");
+            alert("Metin bulunamadı.");
         }
     },
     

@@ -80,7 +80,7 @@ const supabaseService = {
             const { data, error } = await this.client.auth.signUp({ email, password });
             if (error) throw error;
             
-            alert("Kayıt başarılı! Giriş yapmayı deneyebilirsiniz. Eğer giriş esnasında doğrulama hatası alırsanız ve mailinize gelen doğrulama linki çalışmazsa (localhost sunucumuza yönlendirdiği için), lütfen Supabase panelinizden 'Authentication -> Settings -> Providers -> Email -> Confirm email' seçeneğini devre dışı bırakın. Bu sayede doğrulama e-postası gerekmeden anında giriş yapabilirsiniz.");
+            alert("Kayıt başarılı. E-posta doğrulama gönderildi.");
             return { success: true };
         } catch (e) {
             console.error("Registration failed:", e);
@@ -165,7 +165,7 @@ const supabaseService = {
                         }
                     }
 
-                    alert("Giriş yapıldı! Buluttaki yedeğiniz indirildi ve kütüphaneniz eşitlendi.");
+                    alert("Giriş başarılı.");
                     window.location.reload();
                     return;
                 }
@@ -174,17 +174,17 @@ const supabaseService = {
             // Backup not found, upload local database
             console.log("Supabase Sync: No backup found. Uploading current local data...");
             await this.performBackup(true);
-            alert("Giriş yapıldı! Bulutta yedek bulunamadı. Mevcut yerel verileriniz ilk yedek olarak buluta yüklendi.");
+            alert("Giriş başarılı.");
         } catch (e) {
             console.error("AutoSyncOnConnect failed:", e);
-            alert("Giriş yapıldı fakat otomatik veri eşitlemesi esnasında hata oluştu: " + e.message);
+            alert("Giriş başarılı.");
         }
     },
 
     // Create or update backup
     async performBackup(isSilent = false) {
         if (!this.isAuthenticated()) {
-            if (!isSilent) alert("Lütfen önce oturum açın.");
+            if (!isSilent) alert("Lütfen giriş yapın.");
             return;
         }
 
@@ -265,22 +265,15 @@ const supabaseService = {
             
             this.updateUI();
             if (!isSilent) {
-                alert("Verileriniz Supabase bulut veritabanına başarıyla yedeklendi!");
+                alert("Yedekleme başarılı.");
             }
         } catch (e) {
             console.error("Backup failed:", e);
-            let userFriendlyMsg = e.message || "Bilinmeyen bir hata oluştu.";
-            if (userFriendlyMsg.includes("bucket") || userFriendlyMsg.includes("not_found") || userFriendlyMsg.includes("not found")) {
-                userFriendlyMsg = "Supabase Storage panelinizde 'backups' adında özel (private) bir klasör/bucket bulunamadı. Lütfen Supabase Storage panelinde 'backups' adında bir bucket oluşturun ve RLS politikalarından oturum açmış (authenticated) kullanıcılara yazma/okuma izni verin.";
-            } else if (userFriendlyMsg.includes("policy") || userFriendlyMsg.includes("row-level-security") || userFriendlyMsg.includes("permission") || userFriendlyMsg.includes("Access denied")) {
-                userFriendlyMsg = "Supabase Storage RLS politikaları yazmaya izin vermiyor. Lütfen 'backups' bucket'ı için oturum açmış (authenticated) kullanıcılara yükleme/güncelleme (insert/update) izni veren bir RLS politikası tanımlayın.";
-            }
-            
             if (!isSilent) {
-                alert("Yedekleme Hatası: " + userFriendlyMsg);
+                alert("Yedekleme başarısız.");
             } else if (statusEl) {
                 const lastBackup = await settingsDb.get('supabaseLastBackupTime', 'Bilinmiyor');
-                statusEl.textContent = `Otomatik yedekleme başarısız. Hata: ${userFriendlyMsg.substring(0, 50)}...`;
+                statusEl.textContent = `Otomatik yedekleme başarısız.`;
             }
         } finally {
             this.isBackingUp = false;
@@ -344,7 +337,7 @@ const supabaseService = {
             const lastBackup = await settingsDb.get('supabaseLastBackupTime', 'Bilinmiyor');
             if (statusEl) statusEl.textContent = `Son yedekleme: ${lastBackup}`;
 
-            if (accountDesc) accountDesc.textContent = "Supabase ile bulut eşitlemesi aktif.";
+            if (accountDesc) accountDesc.textContent = "";
             if (accountType) {
                 accountType.value = `Bulut Hesabı (${this.getUserEmail()})`;
                 accountType.style.background = 'rgba(124, 58, 237, 0.08)';
@@ -359,7 +352,7 @@ const supabaseService = {
             if (discCard) discCard.style.display = 'flex';
             if (connCard) connCard.style.display = 'none';
 
-            if (accountDesc) accountDesc.textContent = "Yerel hesap durumu bilgileri aşağıdadır.";
+            if (accountDesc) accountDesc.textContent = "";
             if (accountType) {
                 accountType.value = "Standart Çevrimdışı Kullanıcı";
                 accountType.style.background = 'rgba(0,0,0,0.05)';
