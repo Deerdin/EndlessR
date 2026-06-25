@@ -1323,9 +1323,14 @@ const app = {
             coverHtml = `<img src="${placeholder}" alt="${book.title}" class="book-cover" loading="lazy">`;
         }
 
+        const isFav = !!book.isFavorite;
+
         card.innerHTML = `
             <button class="btn-delete-book" title="Kitabı Sil">
                 <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+            </button>
+            <button class="btn-favorite-book" title="Favorilere Ekle/Çıkar" style="position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 3; color: ${isFav ? '#f59e0b' : '#d1d5db'}; padding: 0;">
+                <i data-lucide="star" style="width: 14px; height: 14px; ${isFav ? 'fill: #f59e0b;' : ''}"></i>
             </button>
             <div class="book-cover-container">
                 ${coverHtml}
@@ -1342,6 +1347,38 @@ const app = {
                 <span class="progress-text">%${book.progressPercent} tamamlandı</span>
             </div>
         `;
+
+        const btnFav = card.querySelector('.btn-favorite-book');
+        if (btnFav) {
+            btnFav.onclick = async (e) => {
+                e.stopPropagation(); // Kitap okuyucuyu açmasını engelle
+                
+                const allBooks = await booksDb.getAllBooks();
+                const favCount = allBooks.filter(b => b.isFavorite).length;
+                
+                if (!book.isFavorite && favCount >= 5) {
+                    alert("En fazla 5 kitabı favorilere ekleyebilirsiniz. Lütfen önce başka bir kitabın favori durumunu kaldırın.");
+                    return;
+                }
+                
+                book.isFavorite = !book.isFavorite;
+                
+                // IndexedDB veritabanında güncelle (dosyasıyla birlikte)
+                const fullBook = await db.books.getItem(book.id);
+                if (fullBook) {
+                    fullBook.isFavorite = book.isFavorite;
+                    await db.books.setItem(book.id, fullBook);
+                }
+                
+                // Arayüzü güncelle
+                await this.loadLibrary();
+                
+                // Otomatik yedeklemeyi tetikle
+                if (typeof supabaseService !== 'undefined') {
+                    supabaseService.scheduleAutoBackup();
+                }
+            };
+        }
 
         card.onclick = (e) => {
             if (this.isLibraryDeleteMode) {

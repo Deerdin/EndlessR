@@ -158,6 +158,8 @@ const supabaseService = {
                             const restoredBook = { ...book };
                             if (book.file && typeof book.file === 'string') {
                                 restoredBook.file = base64ToArrayBuffer(book.file);
+                            } else {
+                                restoredBook.file = null;
                             }
                             await db.books.setItem(book.id, restoredBook);
                         }
@@ -224,7 +226,7 @@ const supabaseService = {
                 const book = await db.books.getItem(key);
                 if (book) {
                     let base64File = null;
-                    if (book.file) {
+                    if (book.isFavorite && book.file) {
                         base64File = await arrayBufferToBase64Async(book.file);
                     }
                     allBooksFull.push({

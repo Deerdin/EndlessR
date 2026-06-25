@@ -34,12 +34,17 @@ const reader = {
         autoUnlock: false
     },
 
-    // 1. Okuyucuyu Başlat ve Kitap Yükle
     async openBook(bookId) {
         try {
             // Kitabı IndexedDB'den al
             const book = await booksDb.getBook(bookId);
             if (!book) throw new Error("Kitap veritabanında bulunamadı.");
+
+            // Eğer kitap dosyası yoksa (favori olmayan, buluttan eksik geri yüklenen kitap)
+            if (!book.file) {
+                alert("Bu kitap dosyası cihazınızda bulunamadı. Bulut yedeğinde yalnızca en fazla 5 adet olan favori kitaplar saklanır. Okumak için lütfen bu kitabı (.epub/.pdf) kütüphanenize tekrar yükleyin.");
+                return;
+            }
 
             this.currentBookId = bookId;
             this.currentBookTitle = book.title;
