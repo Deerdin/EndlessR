@@ -93,6 +93,14 @@ const supabaseService = {
         if (!this.client) return;
         
         try {
+            // Eğer bekleyen bir otomatik yedekleme varsa hemen çalıştır ve bitmesini bekle
+            if (this.autoBackupTimeout) {
+                clearTimeout(this.autoBackupTimeout);
+                this.autoBackupTimeout = null;
+                console.log("Disconnect: Oturum kapatılmadan önce bekleyen yedekleme yapılıyor...");
+                await this.performBackup(true);
+            }
+
             await this.client.auth.signOut();
             this.session = null;
             if (this.autoBackupInterval) {
@@ -103,6 +111,7 @@ const supabaseService = {
             window.location.reload();
         } catch (e) {
             console.error("Logout failed:", e);
+            window.location.reload();
         }
     },
 
@@ -224,7 +233,7 @@ const supabaseService = {
             const bookKeys = await db.books.keys();
             for (const key of bookKeys) {
                 const book = await db.books.getItem(key);
-                if (book) {
+                if (book && !book.inTrash) {
                     let base64File = null;
                     if (book.isFavorite && book.file) {
                         base64File = await arrayBufferToBase64Async(book.file);
@@ -255,6 +264,7 @@ const supabaseService = {
                 .from('backups')
                 .upload(`${userId}/backup.json`, blob, {
                     contentType: 'application/json',
+                    cacheControl: '0',
                     upsert: true
                 });
 

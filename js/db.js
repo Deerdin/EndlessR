@@ -47,7 +47,7 @@ const booksDb = {
             const books = [];
             for (const key of keys) {
                 const book = await db.books.getItem(key);
-                if (book) {
+                if (book && !book.inTrash) {
                     // Dosya verisini (file) arayüzde taşımamak için kopyalayıp çıkarıyoruz
                     const { file, ...metadata } = book;
                     books.push(metadata);
@@ -57,6 +57,26 @@ const booksDb = {
             return books.sort((a, b) => b.addedAt - a.addedAt);
         } catch (err) {
             console.error("Kitaplar listelenirken hata oluştu:", err);
+            return [];
+        }
+    },
+
+    // Çöp kutusundaki kitapları listele
+    async getTrashBooks() {
+        try {
+            const keys = await db.books.keys();
+            const books = [];
+            for (const key of keys) {
+                const book = await db.books.getItem(key);
+                if (book && book.inTrash) {
+                    const { file, ...metadata } = book;
+                    books.push(metadata);
+                }
+            }
+            // Silinme tarihine göre sırala (yeniden eskiye)
+            return books.sort((a, b) => b.deletedAt - a.deletedAt);
+        } catch (err) {
+            console.error("Çöp kutusu listelenirken hata oluştu:", err);
             return [];
         }
     },

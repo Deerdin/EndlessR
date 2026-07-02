@@ -90,6 +90,14 @@ const app = {
 
         // 3. Olay Dinleyicilerini Kur
         this.setupEventListeners();
+
+        // Çöp Kutusu Zamanlayıcısını Başlat
+        setInterval(() => {
+            this.updateTrashCountdowns();
+        }, 1000);
+
+        // İlk açılışta süresi dolmuş çöp kitaplarını temizle
+        await this.processTrashPurge();
     },
 
     // 1. Ekran Geçişlerini Yönet
@@ -122,41 +130,63 @@ const app = {
     async loadLibrary() {
         const bookGrid = document.getElementById('book-grid');
         const profileBookGrid = document.getElementById('profile-book-grid');
+        const trashBookGrid = document.getElementById('trash-book-grid');
         const emptyState = document.getElementById('library-empty');
+        const trashEmptyState = document.getElementById('trash-empty');
         const statsSummary = document.getElementById('profile-stats-text');
+        const segmentBtnTrash = document.getElementById('segment-btn-trash');
         
         if (bookGrid) bookGrid.innerHTML = '';
         if (profileBookGrid) profileBookGrid.innerHTML = '';
+        if (trashBookGrid) trashBookGrid.innerHTML = '';
         
         const books = await booksDb.getAllBooks();
+        const trashBooks = await booksDb.getTrashBooks();
         
+        // Oturum durumuna göre çöp kutusu sekmesini göster/gizle
+        const isLoggedIn = typeof supabaseService !== 'undefined' && supabaseService.isAuthenticated();
+        if (segmentBtnTrash) {
+            segmentBtnTrash.style.display = isLoggedIn ? 'block' : 'none';
+        }
+
         if (books.length === 0) {
             if (emptyState) emptyState.style.display = 'flex';
             if (statsSummary) statsSummary.textContent = "Kütüphanede kitap bulunmuyor.";
-            return;
-        }
-
-        if (emptyState) emptyState.style.display = 'none';
-        
-        // Okuma istatistikleri
-        const totalBooks = books.length;
-        const readBooks = books.filter(b => b.progressPercent >= 95).length;
-        const readingBooks = books.filter(b => b.progressPercent > 0 && b.progressPercent < 95).length;
-        
-        if (statsSummary) {
-            statsSummary.textContent = `${totalBooks} kitap yüklü. (${readingBooks} okunuyor, ${readBooks} bitti)`;
-        }
-
-        books.forEach(book => {
-            const card = this.createBookCard(book);
-            if (bookGrid) bookGrid.appendChild(card);
+        } else {
+            if (emptyState) emptyState.style.display = 'none';
+            // Okuma istatistikleri
+            const totalBooks = books.length;
+            const readBooks = books.filter(b => b.progressPercent >= 95).length;
+            const readingBooks = books.filter(b => b.progressPercent > 0 && b.progressPercent < 95).length;
             
-            // Profil Kitaplık segmentine de ekle
-            if (profileBookGrid) {
-                const profileCard = this.createBookCard(book);
-                profileBookGrid.appendChild(profileCard);
+            if (statsSummary) {
+                statsSummary.textContent = `${totalBooks} kitap yüklü. (${readingBooks} okunuyor, ${readBooks} bitti)`;
             }
-        });
+
+            books.forEach(book => {
+                const card = this.createBookCard(book);
+                if (bookGrid) bookGrid.appendChild(card);
+                
+                // Profil Kitaplık segmentine de ekle
+                if (profileBookGrid) {
+                    const profileCard = this.createBookCard(book);
+                    profileBookGrid.appendChild(profileCard);
+                }
+            });
+        }
+
+        // Çöp Kutusu Gridini Doldur
+        if (trashBookGrid) {
+            if (!isLoggedIn || trashBooks.length === 0) {
+                if (trashEmptyState) trashEmptyState.style.display = 'flex';
+            } else {
+                if (trashEmptyState) trashEmptyState.style.display = 'none';
+                trashBooks.forEach(book => {
+                    const card = this.createTrashBookCard(book);
+                    trashBookGrid.appendChild(card);
+                });
+            }
+        }
 
         // Yeni eklenen ikonları çizdir
         lucide.createIcons();
@@ -164,16 +194,137 @@ const app = {
 
     // Kitap Silme İşlemi
     async deleteBook(id, title, force = false) {
-        if (force || confirm(`"${title}" kitabını kütüphanenizden tamamen silmek istediğinize emin misiniz?`)) {
-            const success = await booksDb.deleteBook(id);
-            if (success) {
-                // Kitap detay paneli açıksa kapat
-                const panel = document.getElementById('book-details-panel');
-                if (panel) panel.classList.remove('open');
-                
-                await this.loadLibrary();
+        if (force || confirm(`"${title}" kitabını silmek istediğinize emin misiniz?`)) {
+            const book = await booksDb.getBook(id);
+            const isLoggedIn = typeof supabaseService !== 'undefined' && supabaseService.isAuthenticated();
+            const isFav = book && book.isFavorite;
+
+            if (isLoggedIn && isFav) {
+                // Kitap favoride ve bulut oturumu açık ise çöp kutusuna taşı
+                if (book) {
+                    book.inTrash = true;
+                    book.deletedAt = Date.now();
+                    await booksDb.saveBook(book); // IndexedDB günceller, otomatik yedeklemeyi tetikler
+                    
+                    // Kitap detay paneli açıksa kapat
+                    const panel = document.getElementById('book-details-panel');
+                    if (panel) panel.classList.remove('open');
+                    
+                    alert("Kitap çöp kutusuna taşındı (1 dakika içinde silinecek).");
+                    await this.loadLibrary();
+                }
             } else {
-                alert("Kitap silinemedi.");
+                // Çevrimdışı veya favori olmayan kitap ise kalıcı olarak sil
+                const success = await booksDb.deleteBook(id);
+                if (success) {
+                    // Kitap detay paneli açıksa kapat
+                    const panel = document.getElementById('book-details-panel');
+                    if (panel) panel.classList.remove('open');
+                    
+                    await this.loadLibrary();
+                } else {
+                    alert("Kitap silinemedi.");
+                }
+            }
+        }
+    },
+
+    // Çöp Kutusu Kitap Kartı Oluşturma
+    createTrashBookCard(book) {
+        const card = document.createElement('div');
+        card.className = 'book-card glass in-trash';
+        
+        let coverHtml = '';
+        if (book.coverUrl && !book.coverUrl.startsWith('blob:')) {
+            coverHtml = `<img src="${book.coverUrl}" alt="${book.title}" class="book-cover" style="opacity: 0.55;" loading="lazy">`;
+        } else {
+            const placeholder = utils.generateGradientPlaceholder(book.title, book.author);
+            coverHtml = `<img src="${placeholder}" alt="${book.title}" class="book-cover" style="opacity: 0.55;" loading="lazy">`;
+        }
+
+        const remainingMs = Math.max(0, 60000 - (Date.now() - book.deletedAt));
+        const remainingSec = Math.ceil(remainingMs / 1000);
+
+        card.innerHTML = `
+            <button class="btn-restore-book" title="Geri Yükle" style="position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-color); border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 3; color: white; padding: 0;">
+                <i data-lucide="rotate-ccw" style="width: 14px; height: 14px;"></i>
+            </button>
+            <div class="book-cover-container">
+                ${coverHtml}
+                <span class="book-badge" style="background: rgba(239, 68, 68, 0.85); color: white;">${remainingSec}sn</span>
+            </div>
+            <div class="book-info">
+                <h4 class="book-title" title="${book.title}" style="color: var(--text-secondary);">${book.title}</h4>
+                <span class="book-author">${book.author}</span>
+            </div>
+        `;
+
+        const btnRestore = card.querySelector('.btn-restore-book');
+        if (btnRestore) {
+            btnRestore.onclick = async (e) => {
+                e.stopPropagation();
+                await this.restoreBookFromTrash(book.id);
+            };
+        }
+
+        return card;
+    },
+
+    // Çöp Kutusundan Geri Yükleme
+    async restoreBookFromTrash(id) {
+        const book = await booksDb.getBook(id);
+        if (book) {
+            delete book.inTrash;
+            delete book.deletedAt;
+            await booksDb.saveBook(book); // IndexedDB günceller, otomatik yedeklemeyi tetikler
+            alert("Kitap geri yüklendi.");
+            await this.loadLibrary();
+        }
+    },
+
+    // Çöp Kutusu Geri Sayım Güncellemesi (Her saniye çalışır)
+    updateTrashCountdowns() {
+        const trashContainer = document.getElementById('trash-book-grid');
+        if (!trashContainer) return;
+
+        const cards = trashContainer.querySelectorAll('.book-card.in-trash');
+        let hasExpired = false;
+
+        cards.forEach(card => {
+            const badge = card.querySelector('.book-badge');
+            if (badge) {
+                const secText = badge.textContent;
+                let sec = parseInt(secText);
+                if (!isNaN(sec)) {
+                    if (sec > 1) {
+                        badge.textContent = (sec - 1) + 'sn';
+                    } else {
+                        hasExpired = true;
+                    }
+                }
+            }
+        });
+
+        if (hasExpired) {
+            this.processTrashPurge();
+        }
+    },
+
+    // Süresi Dolan Çöpteki Kitapları Kalıcı Olarak Temizle
+    async processTrashPurge() {
+        const keys = await db.books.keys();
+        let changed = false;
+        for (const key of keys) {
+            const book = await db.books.getItem(key);
+            if (book && book.inTrash && (Date.now() - book.deletedAt >= 60000)) {
+                await db.books.removeItem(key);
+                changed = true;
+            }
+        }
+        if (changed) {
+            await this.loadLibrary();
+            if (typeof supabaseService !== 'undefined') {
+                supabaseService.scheduleAutoBackup();
             }
         }
     },

@@ -97,6 +97,9 @@
                 <button class="segment-btn" data-segment="profile-replacements">
                     <i data-lucide="edit-3" style="width: 14px; height: 14px; margin-right: 4px;"></i>Değişimler
                 </button>
+                <button class="segment-btn" data-segment="profile-trash" id="segment-btn-trash" style="display: none;">
+                    <i data-lucide="trash-2" style="width: 14px; height: 14px; margin-right: 4px;"></i>Çöp Kutusu
+                </button>
                 <button class="segment-btn" data-segment="profile-account">
                     <i data-lucide="user-cog" style="width: 14px; height: 14px; margin-right: 4px;"></i>Hesap
                 </button>
@@ -234,6 +237,23 @@
                     
                     <div id="replacements-list" class="words-list" style="margin-top: 12px;">
                         <!-- Dinamik doldurulacak -->
+                    </div>
+                </div>
+
+                <!-- SEGMENT 5: ÇÖP KUTUSU -->
+                <div id="profile-trash" class="segment-pane">
+                    <div class="segment-header">
+                        <span class="section-title">Çöp Kutusu</span>
+                    </div>
+                    <p class="settings-description" style="margin-top: 6px; margin-bottom: 12px; font-size: 12px; color: var(--text-muted);">
+                        Buluttan silinen kitaplar burada 1 dakika bekletilir, ardından kalıcı olarak silinir.
+                    </p>
+                    <div id="trash-book-grid" class="book-grid" style="margin-top: 12px;">
+                        <!-- Dinamik doldurulacak -->
+                    </div>
+                    <div id="trash-empty" class="empty-state" style="display: flex;">
+                        <i data-lucide="trash" class="empty-icon"></i>
+                        <p>Çöp kutusu boş.</p>
                     </div>
                 </div>
             </main>
