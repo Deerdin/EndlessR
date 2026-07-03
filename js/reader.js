@@ -58,6 +58,25 @@ const reader = {
         }, 800);
     },
 
+    savePdfScrollLocation() {
+        if (this.currentBookType !== 'pdf' || !this.pdfDocument) return;
+        
+        if (this.pdfScrollTimeout) clearTimeout(this.pdfScrollTimeout);
+        this.pdfScrollTimeout = setTimeout(async () => {
+            try {
+                const pageNum = this.pdfCurrentPage;
+                const scrollTop = window.scrollY;
+                const lastLocationString = `${pageNum};${scrollTop}`;
+                
+                const percent = Math.round((pageNum / this.pdfTotalPages) * 100);
+                // DB'ye kaydet (otomatik yedeklemeyi de tetikler)
+                await booksDb.updateProgress(this.currentBookId, percent, lastLocationString);
+            } catch (e) {
+                console.warn("PDF scroll kaydetme hatası:", e);
+            }
+        }, 800);
+    },
+
     // Okuyucu Stil Ayarları (IndexedDB'den veya varsayılan)
     settings: {
         fontSize: 100, // yüzdelik
@@ -92,6 +111,9 @@ const reader = {
             // Arayüzü hazırla
             document.getElementById('reader-book-title').textContent = book.title;
             document.getElementById('view-reader').style.display = 'flex';
+
+            document.documentElement.classList.add('reader-active');
+            document.body.classList.add('reader-active');
             
             // Başlangıçta üst bar ve alt ayar panelini kapalı yap
             const readerHeader = document.querySelector('.reader-header');
@@ -260,14 +282,6 @@ const reader = {
             manager: epubManager,
             allowScriptedContent: true
         });
-
-        // Sayfa/bölüm dikey kaydırma dinleyicisi (scrollTop)
-        const viewer = document.getElementById('epub-viewer');
-        if (viewer) {
-            viewer.addEventListener('scroll', () => {
-                this.saveEpubScrollLocation();
-            });
-        }
 
         // Kitabı en sonda render edeceğiz (Kancalar ve olay dinleyicileri kaydolduktan sonra)
 
@@ -773,29 +787,6 @@ const reader = {
         }
         this.pdfSavedScrollTop = savedScrollTop;
 
-        // PDF dikey kaydırma dinleyicisi
-        const pdfViewer = document.getElementById('pdf-viewer');
-        if (pdfViewer) {
-            pdfViewer.addEventListener('scroll', () => {
-                if (this.currentBookType !== 'pdf' || !this.pdfDocument) return;
-                
-                if (this.pdfScrollTimeout) clearTimeout(this.pdfScrollTimeout);
-                this.pdfScrollTimeout = setTimeout(async () => {
-                    try {
-                        const pageNum = this.pdfCurrentPage;
-                        const scrollTop = pdfViewer.scrollTop;
-                        const lastLocationString = `${pageNum};${scrollTop}`;
-                        
-                        const percent = Math.round((pageNum / this.pdfTotalPages) * 100);
-                        // DB'ye kaydet
-                        await booksDb.updateProgress(this.currentBookId, percent, lastLocationString);
-                    } catch (e) {
-                        console.warn("PDF scroll kaydetme hatası:", e);
-                    }
-                }, 800);
-            });
-        }
-
         // PDF Slider ayarla
         const progressSlider = document.getElementById('reader-progress-slider');
         if (progressSlider) {
@@ -904,7 +895,7 @@ const reader = {
                 const scrollTopToApply = this.pdfSavedScrollTop;
                 this.pdfSavedScrollTop = 0; // Bir kere uygulandıktan sonra sıfırla
                 setTimeout(() => {
-                    viewerContainer.scrollTop = scrollTopToApply;
+                    window.scrollTo(0, scrollTopToApply);
                 }, 100);
             }
 
@@ -2446,6 +2437,10 @@ const reader = {
         this.stopTTS();
         
         document.getElementById('view-reader').style.display = 'none';
+
+        document.documentElement.classList.remove('reader-active');
+        document.body.classList.remove('reader-active');
+        window.scrollTo(0, 0);
         
         // Belleği boşalt
         if (this.epubBook) {
@@ -2490,3 +2485,30 @@ const reader = {
         }
     }
 };
+
+// Global Window Scroll Listener (Chrome Adres Çubuğu & Reader Header Gizleme/Gösterme Entegrasyonu)
+let lastScrollY = window.scrollY;
+
+window.addEventListener('scroll', () => {
+    if (!document.body.classList.contains('reader-active')) return;
+
+    const currentScrollY = window.scrollY;
+    const header = document.querySelector('.reader-header');
+    
+    // 1. Header Göster/Gizle mantığı (Aşağı kaydırırken gizle, yukarı kaydırırken göster)
+    if (header) {
+        if (currentScrollY > lastScrollY && currentScrollY > 80) {
+            header.classList.remove('open');
+        } else if (currentScrollY < lastScrollY) {
+            header.classList.add('open');
+        }
+    }
+    lastScrollY = currentScrollY;
+
+    // 2. Okuma Konumunu Kaydetme Entegrasyonu
+    if (reader.currentBookType === 'epub') {
+        reader.saveEpubScrollLocation();
+    } else if (reader.currentBookType === 'pdf') {
+        reader.savePdfScrollLocation();
+    }
+});

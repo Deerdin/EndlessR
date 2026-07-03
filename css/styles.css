@@ -128,11 +128,11 @@ body.theme-night {
 }
 
 html, body {
-    margin: 0 !important;
-    padding: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    overflow: hidden !important;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
 }
 
 body {
@@ -2179,6 +2179,43 @@ body.theme-light .wtr-select {
     #toc-panel {
         max-width: 350px !important;
     }
+}
+
+/* Chrome/Safari Adres Çubuğu Gizleme Desteği (Root Scroll) */
+body.reader-active, html.reader-active {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    height: auto !important;
+}
+
+body.reader-active .reader-view {
+    position: absolute !important;
+    height: auto !important;
+    min-height: 100vh !important;
+    overflow: visible !important;
+}
+
+body.reader-active .reader-container {
+    height: auto !important;
+    overflow: visible !important;
+}
+
+body.reader-active .viewer-pane {
+    height: auto !important;
+    overflow: visible !important;
+}
+
+body.reader-active #epub-viewer, body.reader-active #pdf-viewer {
+    height: auto !important;
+    overflow: visible !important;
+}
+
+body.reader-active .reader-header {
+    position: fixed !important;
+}
+
+body.reader-active .pdf-scroll-mode {
+    padding-top: calc(env(safe-area-inset-top, 35px) + 60px) !important;
 }
 
 
