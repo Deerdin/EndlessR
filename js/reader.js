@@ -20,6 +20,43 @@ const reader = {
     pdfCurrentPage: 1,
     pdfTotalPages: 0,
     pdfRendering: false,
+    pdfSavedScrollTop: 0,
+    pdfScrollTimeout: null,
+    
+    epubScrollTimeout: null,
+
+    // EPUB Dikey Kaydırma Konumunu Kaydetme Yardımcısı
+    saveEpubScrollLocation() {
+        if (this.currentBookType !== 'epub' || !this.epubRendition) return;
+        
+        if (this.epubScrollTimeout) clearTimeout(this.epubScrollTimeout);
+        this.epubScrollTimeout = setTimeout(async () => {
+            try {
+                const location = this.epubRendition.currentLocation();
+                if (location && location.start && location.start.cfi) {
+                    this.epubLocation = location.start.cfi;
+                    
+                    const currentSpineIndex = location.start.index;
+                    const totalSpineItems = this.epubBook.spine.length;
+                    const progressPercent = Math.round(((currentSpineIndex + 1) / totalSpineItems) * 100);
+                    
+                    // İlerlemeyi DB'ye yaz (otomatik yedeklemeyi de tetikler)
+                    await booksDb.updateProgress(this.currentBookId, progressPercent, this.epubLocation);
+                    
+                    // UI'ı güncelle
+                    const chIndicator = document.getElementById('panel-chapter-indicator');
+                    if (chIndicator) {
+                        chIndicator.textContent = `Ch. ${currentSpineIndex + 1} / ${totalSpineItems} (${progressPercent}%)`;
+                    }
+                    
+                    // Slider'ı senkronize et
+                    this.syncSliderToCurrentLocation();
+                }
+            } catch (e) {
+                console.warn("EPUB scroll konumu kaydetme hatası:", e);
+            }
+        }, 800);
+    },
 
     // Okuyucu Stil Ayarları (IndexedDB'den veya varsayılan)
     settings: {
@@ -224,6 +261,14 @@ const reader = {
             allowScriptedContent: true
         });
 
+        // Sayfa/bölüm dikey kaydırma dinleyicisi (scrollTop)
+        const viewer = document.getElementById('epub-viewer');
+        if (viewer) {
+            viewer.addEventListener('scroll', () => {
+                this.saveEpubScrollLocation();
+            });
+        }
+
         // Kitabı en sonda render edeceğiz (Kancalar ve olay dinleyicileri kaydolduktan sonra)
 
         // İçindekiler listesini yükle
@@ -388,6 +433,12 @@ const reader = {
                         this.translateDocument(doc, this.settings.targetLang);
                     }, 50);
                 }
+
+                // Iframe içi dikey kaydırmayı dinle
+                contents.window.addEventListener('scroll', () => {
+                    this.saveEpubScrollLocation();
+                });
+
                 const body = doc.body;
                 
                 // Sadece 'single' modunda dikey kaydırma sayfa sonuna Önceki / Sonraki Bölüm butonları ekle
@@ -711,8 +762,39 @@ const reader = {
 
         document.getElementById('pdf-total-pages').textContent = this.pdfTotalPages;
 
-        // Kaldığı sayfayı belirle
-        this.pdfCurrentPage = startPage ? parseInt(startPage) : 1;
+        // Kaldığı sayfayı ve dikey scroll konumunu belirle
+        let savedScrollTop = 0;
+        if (startPage && typeof startPage === 'string' && startPage.includes(';')) {
+            const parts = startPage.split(';');
+            this.pdfCurrentPage = parseInt(parts[0]) || 1;
+            savedScrollTop = parseInt(parts[1]) || 0;
+        } else {
+            this.pdfCurrentPage = startPage ? parseInt(startPage) : 1;
+        }
+        this.pdfSavedScrollTop = savedScrollTop;
+
+        // PDF dikey kaydırma dinleyicisi
+        const pdfViewer = document.getElementById('pdf-viewer');
+        if (pdfViewer) {
+            pdfViewer.addEventListener('scroll', () => {
+                if (this.currentBookType !== 'pdf' || !this.pdfDocument) return;
+                
+                if (this.pdfScrollTimeout) clearTimeout(this.pdfScrollTimeout);
+                this.pdfScrollTimeout = setTimeout(async () => {
+                    try {
+                        const pageNum = this.pdfCurrentPage;
+                        const scrollTop = pdfViewer.scrollTop;
+                        const lastLocationString = `${pageNum};${scrollTop}`;
+                        
+                        const percent = Math.round((pageNum / this.pdfTotalPages) * 100);
+                        // DB'ye kaydet
+                        await booksDb.updateProgress(this.currentBookId, percent, lastLocationString);
+                    } catch (e) {
+                        console.warn("PDF scroll kaydetme hatası:", e);
+                    }
+                }, 800);
+            });
+        }
 
         // PDF Slider ayarla
         const progressSlider = document.getElementById('reader-progress-slider');
@@ -817,6 +899,15 @@ const reader = {
             viewerContainer.innerHTML = '';
             viewerContainer.appendChild(pageContainer);
 
+            // Eğer kaydedilmiş bir dikey kaydırma konumu varsa ve açılış sayfasıysa uygula
+            if (this.pdfSavedScrollTop && pageNumber === this.pdfCurrentPage) {
+                const scrollTopToApply = this.pdfSavedScrollTop;
+                this.pdfSavedScrollTop = 0; // Bir kere uygulandıktan sonra sıfırla
+                setTimeout(() => {
+                    viewerContainer.scrollTop = scrollTopToApply;
+                }, 100);
+            }
+
             // Sayfa numarasını güncelle
             this.pdfCurrentPage = pageNumber;
             document.getElementById('pdf-current-page').textContent = pageNumber;
@@ -825,8 +916,8 @@ const reader = {
             const percent = Math.round((this.pdfCurrentPage / this.pdfTotalPages) * 100);
             this.updateProgressBar(this.pdfCurrentPage, percent, `Sayfa ${this.pdfCurrentPage} / ${this.pdfTotalPages}`);
             
-            // DB'ye kaydet
-            booksDb.updateProgress(this.currentBookId, percent, this.pdfCurrentPage);
+            // DB'ye kaydet (Yeni sayfaya geçildiğinde kaydırma 0'dan başlar)
+            booksDb.updateProgress(this.currentBookId, percent, `${this.pdfCurrentPage};0`);
  
             // PDF sayfa geçişini geçmişe kaydet (NavHistory)
             if (typeof navHistory !== 'undefined' && !navHistory.isNavigatingBack) {
