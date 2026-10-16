@@ -145,15 +145,10 @@ const app = {
             }
         }
 
-        // 3. Ekranları Yükle
-        await this.loadLibrary();
-        await this.loadWords();
-        await this.loadReplacements();
-
-        // 4. Olay Dinleyicilerini Kur
+        // 3. Olay Dinleyicilerini Kur
         this.setupEventListeners();
 
-        // 5. Oturum / Sayfa Yenileme Durumunu Geri Yükle
+        // 4. Oturum / Sayfa Yenileme Durumunu Öncelikli Olarak Geri Yükle (Kitap açıksa anında aç)
         const hasRestoredSession = navHistory.initFromSession();
         if (!hasRestoredSession) {
             navHistory.push({ type: 'view', viewId: 'view-home', segmentId: 'segment-books' });
@@ -176,6 +171,11 @@ const app = {
                 });
             }
         }
+
+        // 5. Arka Plan Ekranlarını Yükle
+        await this.loadLibrary();
+        await this.loadWords();
+        await this.loadReplacements();
     },
 
     getActiveProfileSegment() {
@@ -769,9 +769,10 @@ const app = {
         });
 
         // OKUYUCU EYLEMLERİ
-        // Geri Dön Butonu (Adım adım önceki sayfaya veya ekrana dön)
+        // Sol Üst Geri Oku Butonu (Doğrudan Ana Sayfaya Gönderir)
         document.getElementById('btn-reader-back').addEventListener('click', () => {
-            this.handleHardwareBack(false);
+            reader.closeReader();
+            this.switchView('view-home');
         });
 
         // Yan Panel (TOC) Tetikleyici

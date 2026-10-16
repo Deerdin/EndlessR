@@ -2175,7 +2175,7 @@ body.theme-light .wtr-select {
 }
 
 /* Chrome/Safari Adres Çubuğu Gizleme Desteği (Root Scroll) */
-body.reader-active, html.reader-active {
+body.reader-active, html.reader-active, html.reader-active body {
     display: block !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
@@ -2184,6 +2184,7 @@ body.reader-active, html.reader-active {
     min-height: 100dvh !important;
 }
 
+html.reader-active #app-container,
 body.reader-active #app-container {
     height: auto !important;
     min-height: 100vh !important;
@@ -2195,12 +2196,16 @@ body.reader-active #app-container {
     margin: 0 auto !important;
 }
 
+html.reader-active .app-view,
+html.reader-active .app-navbar,
 body.reader-active .app-view,
 body.reader-active .app-navbar {
     display: none !important;
 }
 
+html.reader-active .reader-view,
 body.reader-active .reader-view {
+    display: flex !important;
     position: relative !important;
     top: auto !important;
     left: auto !important;
@@ -2215,6 +2220,7 @@ body.reader-active .reader-view {
     animation: none !important;
 }
 
+html.reader-active .reader-container,
 body.reader-active .reader-container {
     height: auto !important;
     min-height: 100vh !important;
@@ -2222,6 +2228,7 @@ body.reader-active .reader-container {
     overflow: visible !important;
 }
 
+html.reader-active .viewer-pane,
 body.reader-active .viewer-pane {
     height: auto !important;
     min-height: 100vh !important;
@@ -2229,6 +2236,9 @@ body.reader-active .viewer-pane {
     overflow: visible !important;
 }
 
+html.reader-active #epub-viewer,
+html.reader-active #pdf-viewer,
+html.reader-active #epub-viewer .epub-container,
 body.reader-active #epub-viewer,
 body.reader-active #pdf-viewer,
 body.reader-active #epub-viewer .epub-container {
@@ -2238,6 +2248,11 @@ body.reader-active #epub-viewer .epub-container {
     overflow: visible !important;
 }
 
+html.reader-active .reader-header,
+html.reader-active .reader-options-panel,
+html.reader-active .side-panel,
+html.reader-active .pdf-indicator,
+html.reader-active .nav-arrow,
 body.reader-active .reader-header,
 body.reader-active .reader-options-panel,
 body.reader-active .side-panel,
@@ -2246,6 +2261,8 @@ body.reader-active .nav-arrow {
     position: fixed !important;
 }
 
+html.reader-active .pdf-scroll-mode,
 body.reader-active .pdf-scroll-mode {
     padding-top: calc(env(safe-area-inset-top, 35px) + 60px) !important;
 }
+

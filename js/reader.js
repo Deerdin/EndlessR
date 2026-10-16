@@ -2053,6 +2053,8 @@ const reader = {
         await settingsDb.set('readerTheme', themeName);
 
         const colors = this.getThemeColors(themeName);
+        try { sessionStorage.setItem('endlessr_reader_bg', colors.bg); } catch (e) {}
+        document.documentElement.style.backgroundColor = colors.bg;
 
         // Reader element sınıfını ve arka plan rengini güncelle
         const readerEl = document.getElementById('view-reader');
@@ -2638,6 +2640,7 @@ const reader = {
 
         document.documentElement.classList.remove('reader-active');
         document.body.classList.remove('reader-active');
+        document.documentElement.style.backgroundColor = '';
         window.scrollTo(0, 0);
         try { sessionStorage.removeItem('endlessr_reader_scroll'); } catch (e) {}
         

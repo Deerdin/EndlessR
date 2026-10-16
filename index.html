@@ -16,6 +16,21 @@
     
     <!-- CSS Stylesheet -->
     <link rel="stylesheet" href="css/styles.css">
+    <script>
+        (function() {
+            try {
+                var raw = sessionStorage.getItem('endlessr_nav_stack');
+                if (raw) {
+                    var stack = JSON.parse(raw);
+                    if (Array.isArray(stack) && stack.length > 0 && stack[stack.length - 1].type === 'reader') {
+                        document.documentElement.classList.add('reader-active');
+                        var bg = sessionStorage.getItem('endlessr_reader_bg');
+                        if (bg) document.documentElement.style.backgroundColor = bg;
+                    }
+                }
+            } catch (e) {}
+        })();
+    </script>
 
     <!-- CDN Libraries -->
     <!-- JSZip (EPUB için zorunlu) -->
