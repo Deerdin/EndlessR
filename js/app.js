@@ -133,7 +133,7 @@ const app = {
 
         // 2. Temel Uygulama Ayarlarını Yükle
         const appTheme = await settingsDb.get('appTheme', 'dark');
-        this.setAppTheme(appTheme);
+        await this.setAppTheme(appTheme);
         
         // Capacitor Back Button Dinleyicisi
         if (window.Capacitor && typeof window.Capacitor.Plugins !== 'undefined') {
@@ -392,23 +392,24 @@ const app = {
         }
     },
 
-    // Uygulama Genel Temasını Değiştir (Kitap içi temadan bağımsız)
-    async setAppTheme(themeName) {
+    // Uygulama Genel Temasını Değiştir (Kitap içi temalarla senkronize)
+    async setAppTheme(themeName, syncReader = true) {
+        const normalized = themeName === 'light' ? 'light' : 'dark';
         const isReaderActive = document.body.classList.contains('reader-active');
         document.body.className = '';
-        document.body.classList.add(`theme-${themeName}`);
+        document.body.classList.add(`theme-${normalized}`);
         if (isReaderActive) {
             document.body.classList.add('reader-active');
         }
         
-        await settingsDb.set('appTheme', themeName);
+        await settingsDb.set('appTheme', normalized);
 
         // Ana sayfadaki Ay / Güneş tema butonunun ikonunu güncelle
         const btnHomeTheme = document.getElementById('btn-home-theme-toggle');
         if (btnHomeTheme) {
-            const iconName = themeName === 'dark' ? 'sun' : 'moon';
+            const iconName = normalized === 'dark' ? 'sun' : 'moon';
             btnHomeTheme.innerHTML = `<i data-lucide="${iconName}" style="width: 18px; height: 18px;"></i>`;
-            btnHomeTheme.title = themeName === 'dark' ? 'Aydınlık Temaya Geç' : 'Karanlık Temaya Geç';
+            btnHomeTheme.title = normalized === 'dark' ? 'Aydınlık Temaya Geç' : 'Karanlık Temaya Geç';
             if (typeof lucide !== 'undefined') {
                 lucide.createIcons({ node: btnHomeTheme });
             }
@@ -418,16 +419,55 @@ const app = {
         const themeButtons = document.querySelectorAll('#view-settings .theme-btn');
         themeButtons.forEach(btn => {
             btn.classList.remove('active');
-            if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(themeName)) {
+            if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(normalized)) {
                 btn.classList.add('active');
             }
         });
+
+        // Kitap içi tema ve renk moduyla senkronize et
+        if (syncReader) {
+            await settingsDb.set('readerColorMode', normalized);
+            const lightThemes = ['light', 'sepia', 'warm', 'ocean', 'rose', 'forest'];
+            const currentReaderTheme = await settingsDb.get('readerTheme', normalized);
+            const isCurrentLight = lightThemes.includes(currentReaderTheme);
+
+            let targetReaderTheme = currentReaderTheme;
+            if ((normalized === 'light' && !isCurrentLight) || (normalized === 'dark' && isCurrentLight)) {
+                const lastKey = normalized === 'light' ? 'readerLastLightTheme' : 'readerLastDarkTheme';
+                const remembered = await settingsDb.get(lastKey, normalized);
+                const isRememberedValid = normalized === 'light'
+                    ? lightThemes.includes(remembered)
+                    : !lightThemes.includes(remembered);
+                targetReaderTheme = isRememberedValid ? remembered : normalized;
+                await settingsDb.set('readerTheme', targetReaderTheme);
+            }
+
+            if (typeof reader !== 'undefined') {
+                reader.settings.colorMode = normalized;
+                reader.settings.theme = targetReaderTheme;
+                const colors = reader.getThemeColors(targetReaderTheme);
+                try { sessionStorage.setItem('endlessr_reader_bg', colors.bg); } catch (e) {}
+
+                const btnLight = document.getElementById('btn-webtheme-light');
+                const btnDark = document.getElementById('btn-webtheme-dark');
+                if (btnLight && btnDark) {
+                    btnLight.classList.toggle('active', normalized === 'light');
+                    btnDark.classList.toggle('active', normalized === 'dark');
+                }
+                reader.updateReaderThemeUI(normalized);
+
+                const readerView = document.getElementById('view-reader');
+                if (readerView && (readerView.style.display === 'flex' || document.body.classList.contains('reader-active'))) {
+                    await reader.setReaderTheme(targetReaderTheme, false);
+                }
+            }
+        }
     },
 
     async toggleAppTheme() {
         const currentTheme = await settingsDb.get('appTheme', 'dark');
         const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
-        await this.setAppTheme(nextTheme);
+        await this.setAppTheme(nextTheme, true);
     },
 
     // 5. Dosya Yükleme ve İşleme Mekanizması

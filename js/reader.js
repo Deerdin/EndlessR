@@ -199,12 +199,24 @@ const reader = {
             this.lastEpubCfi = null;
             this.lastPdfPage = null;
 
-            // Ayarları yükle (Ana sayfa temasından bağımsız kitap içi tema ayarları)
+            // Ayarları yükle (Ana sayfa temasıyla senkronize kitap içi tema ayarları)
             this.settings.fontSize = await settingsDb.get('readerFontSize', 100);
             this.settings.fontFamily = await settingsDb.get('readerFontFamily', 'system-ui');
             this.settings.lineHeight = await settingsDb.get('readerLineHeight', 1.6);
-            this.settings.colorMode = await settingsDb.get('readerColorMode', 'dark');
-            this.settings.theme = await settingsDb.get('readerTheme', this.settings.colorMode === 'dark' ? 'dark' : 'light');
+
+            const appTheme = await settingsDb.get('appTheme', 'dark');
+            const targetMode = appTheme === 'light' ? 'light' : 'dark';
+            this.settings.colorMode = targetMode;
+            await settingsDb.set('readerColorMode', targetMode);
+
+            let savedTheme = await settingsDb.get('readerTheme', targetMode);
+            if (this.isLightTheme(savedTheme) !== (targetMode === 'light')) {
+                const lastKey = targetMode === 'light' ? 'readerLastLightTheme' : 'readerLastDarkTheme';
+                const remembered = await settingsDb.get(lastKey, targetMode);
+                savedTheme = (this.isLightTheme(remembered) === (targetMode === 'light')) ? remembered : targetMode;
+                await settingsDb.set('readerTheme', savedTheme);
+            }
+            this.settings.theme = savedTheme;
             
             this.settings.tapToTranslate = await settingsDb.get('readerTapToTranslate', false);
             this.settings.padding = await settingsDb.get('readerPadding', 8);
@@ -2030,27 +2042,70 @@ const reader = {
         });
     },
 
-    // Kitap İçi Renk Paleti Modu Seçme (Light / Dark - Ana sayfa temasından bağımsız)
+    // Bir okuyucu temasının açık (light) palete ait olup olmadığını kontrol eder
+    isLightTheme(themeName) {
+        const lightThemes = ['light', 'sepia', 'warm', 'ocean', 'rose', 'forest'];
+        return lightThemes.includes(themeName);
+    },
+
+    // Kitap İçi Renk Paleti Modu Seçme (Light / Dark - Ana sayfa temasıyla senkronize)
     async setReaderColorMode(mode) {
-        this.settings.colorMode = mode === 'light' ? 'light' : 'dark';
-        await settingsDb.set('readerColorMode', this.settings.colorMode);
+        const normalizedMode = mode === 'light' ? 'light' : 'dark';
+        this.settings.colorMode = normalizedMode;
+        await settingsDb.set('readerColorMode', normalizedMode);
 
         const btnLight = document.getElementById('btn-webtheme-light');
         const btnDark = document.getElementById('btn-webtheme-dark');
         if (btnLight && btnDark) {
-            btnLight.classList.toggle('active', this.settings.colorMode === 'light');
-            btnDark.classList.toggle('active', this.settings.colorMode === 'dark');
+            btnLight.classList.toggle('active', normalizedMode === 'light');
+            btnDark.classList.toggle('active', normalizedMode === 'dark');
         }
 
-        const defaultReaderTheme = this.settings.colorMode === 'dark' ? 'dark' : 'light';
-        await this.setReaderTheme(defaultReaderTheme);
-        this.updateReaderThemeUI(this.settings.colorMode);
+        // Ana sayfa temasını da bu modla senkronize et
+        if (window.app && typeof window.app.setAppTheme === 'function') {
+            await window.app.setAppTheme(normalizedMode, false);
+        }
+
+        // Seçilen modun en son kullanılan alt temasını (yoksa varsayılanını) yükle
+        const lastKey = normalizedMode === 'light' ? 'readerLastLightTheme' : 'readerLastDarkTheme';
+        const remembered = await settingsDb.get(lastKey, normalizedMode);
+        const targetReaderTheme = (this.isLightTheme(remembered) === (normalizedMode === 'light'))
+            ? remembered
+            : normalizedMode;
+
+        await this.setReaderTheme(targetReaderTheme, false);
+        this.updateReaderThemeUI(normalizedMode);
     },
 
-    // Okuyucu Teması Seçme
-    async setReaderTheme(themeName) {
+    // Okuyucu Teması Seçme (Ana sayfa temasıyla senkronize)
+    async setReaderTheme(themeName, syncApp = true) {
         this.settings.theme = themeName;
         await settingsDb.set('readerTheme', themeName);
+
+        const targetColorMode = this.isLightTheme(themeName) ? 'light' : 'dark';
+        await settingsDb.set(
+            targetColorMode === 'light' ? 'readerLastLightTheme' : 'readerLastDarkTheme',
+            themeName
+        );
+
+        const modeChanged = this.settings.colorMode !== targetColorMode;
+        this.settings.colorMode = targetColorMode;
+        await settingsDb.set('readerColorMode', targetColorMode);
+
+        const btnLight = document.getElementById('btn-webtheme-light');
+        const btnDark = document.getElementById('btn-webtheme-dark');
+        if (btnLight && btnDark) {
+            btnLight.classList.toggle('active', targetColorMode === 'light');
+            btnDark.classList.toggle('active', targetColorMode === 'dark');
+        }
+
+        if (modeChanged) {
+            this.updateReaderThemeUI(targetColorMode);
+        }
+
+        if (syncApp && window.app && typeof window.app.setAppTheme === 'function') {
+            await window.app.setAppTheme(targetColorMode, false);
+        }
 
         const colors = this.getThemeColors(themeName);
         try { sessionStorage.setItem('endlessr_reader_bg', colors.bg); } catch (e) {}
