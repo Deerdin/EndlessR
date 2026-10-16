@@ -204,16 +204,28 @@ const reader = {
             this.settings.fontFamily = await settingsDb.get('readerFontFamily', 'system-ui');
             this.settings.lineHeight = await settingsDb.get('readerLineHeight', 1.6);
 
-            const appTheme = await settingsDb.get('appTheme', 'dark');
-            const targetMode = appTheme === 'light' ? 'light' : 'dark';
+            // Ana sayfanın mevcut aktif temasını doğrudan DOM ve localStorage üzerinden al
+            const isBodyLight = document.body.classList.contains('theme-light');
+            const targetMode = isBodyLight ? 'light' : 'dark';
             this.settings.colorMode = targetMode;
+            try { localStorage.setItem('endlessr_reader_color_mode', targetMode); } catch (e) {}
             await settingsDb.set('readerColorMode', targetMode);
 
-            let savedTheme = await settingsDb.get('readerTheme', targetMode);
+            let savedTheme = null;
+            try { savedTheme = localStorage.getItem('endlessr_reader_theme'); } catch (e) {}
+            if (!savedTheme) {
+                savedTheme = await settingsDb.get('readerTheme', targetMode);
+            }
             if (this.isLightTheme(savedTheme) !== (targetMode === 'light')) {
-                const lastKey = targetMode === 'light' ? 'readerLastLightTheme' : 'readerLastDarkTheme';
-                const remembered = await settingsDb.get(lastKey, targetMode);
+                const lastLocalKey = targetMode === 'light' ? 'endlessr_last_light_theme' : 'endlessr_last_dark_theme';
+                const lastDbKey = targetMode === 'light' ? 'readerLastLightTheme' : 'readerLastDarkTheme';
+                let remembered = null;
+                try { remembered = localStorage.getItem(lastLocalKey); } catch (e) {}
+                if (!remembered) {
+                    remembered = await settingsDb.get(lastDbKey, targetMode);
+                }
                 savedTheme = (this.isLightTheme(remembered) === (targetMode === 'light')) ? remembered : targetMode;
+                try { localStorage.setItem('endlessr_reader_theme', savedTheme); } catch (e) {}
                 await settingsDb.set('readerTheme', savedTheme);
             }
             this.settings.theme = savedTheme;
@@ -273,6 +285,9 @@ const reader = {
             document.getElementById('btn-prev-page').style.display = 'none';
             document.getElementById('btn-next-page').style.display = 'none';
 
+            // Kitap yüklenmeden önce okuyucu temasını hazırla
+            await this.setReaderTheme(this.settings.theme, false);
+
             const targetStartLocation = (options && options.restoreLocation !== undefined && options.restoreLocation !== null)
                 ? options.restoreLocation
                 : book.lastLocation;
@@ -285,7 +300,7 @@ const reader = {
             }
 
             // Temayı uygula
-            await this.setReaderTheme(this.settings.theme);
+            await this.setReaderTheme(this.settings.theme, false);
 
             // Eğer sayfa yenilemesinden geri yükleniyorsa dikey kaydırma konumunu da geri yükle
             if (this.isRestoringBook) {
@@ -2052,7 +2067,7 @@ const reader = {
     async setReaderColorMode(mode) {
         const normalizedMode = mode === 'light' ? 'light' : 'dark';
         this.settings.colorMode = normalizedMode;
-        await settingsDb.set('readerColorMode', normalizedMode);
+        try { localStorage.setItem('endlessr_reader_color_mode', normalizedMode); } catch (e) {}
 
         const btnLight = document.getElementById('btn-webtheme-light');
         const btnDark = document.getElementById('btn-webtheme-dark');
@@ -2067,30 +2082,38 @@ const reader = {
         }
 
         // Seçilen modun en son kullanılan alt temasını (yoksa varsayılanını) yükle
-        const lastKey = normalizedMode === 'light' ? 'readerLastLightTheme' : 'readerLastDarkTheme';
-        const remembered = await settingsDb.get(lastKey, normalizedMode);
+        const lastLocalKey = normalizedMode === 'light' ? 'endlessr_last_light_theme' : 'endlessr_last_dark_theme';
+        const lastDbKey = normalizedMode === 'light' ? 'readerLastLightTheme' : 'readerLastDarkTheme';
+        let remembered = null;
+        try { remembered = localStorage.getItem(lastLocalKey); } catch (e) {}
+        if (!remembered) {
+            remembered = await settingsDb.get(lastDbKey, normalizedMode);
+        }
         const targetReaderTheme = (this.isLightTheme(remembered) === (normalizedMode === 'light'))
             ? remembered
             : normalizedMode;
 
-        await this.setReaderTheme(targetReaderTheme, false);
         this.updateReaderThemeUI(normalizedMode);
+        await this.setReaderTheme(targetReaderTheme, false);
+        await settingsDb.set('readerColorMode', normalizedMode);
     },
 
     // Okuyucu Teması Seçme (Ana sayfa temasıyla senkronize)
     async setReaderTheme(themeName, syncApp = true) {
         this.settings.theme = themeName;
-        await settingsDb.set('readerTheme', themeName);
-
         const targetColorMode = this.isLightTheme(themeName) ? 'light' : 'dark';
-        await settingsDb.set(
-            targetColorMode === 'light' ? 'readerLastLightTheme' : 'readerLastDarkTheme',
-            themeName
-        );
+
+        try {
+            localStorage.setItem('endlessr_reader_theme', themeName);
+            localStorage.setItem('endlessr_reader_color_mode', targetColorMode);
+            localStorage.setItem(
+                targetColorMode === 'light' ? 'endlessr_last_light_theme' : 'endlessr_last_dark_theme',
+                themeName
+            );
+        } catch (e) {}
 
         const modeChanged = this.settings.colorMode !== targetColorMode;
         this.settings.colorMode = targetColorMode;
-        await settingsDb.set('readerColorMode', targetColorMode);
 
         const btnLight = document.getElementById('btn-webtheme-light');
         const btnDark = document.getElementById('btn-webtheme-dark');
@@ -2139,6 +2162,13 @@ const reader = {
                 btn.classList.add('active');
             }
         });
+
+        await settingsDb.set('readerTheme', themeName);
+        await settingsDb.set('readerColorMode', targetColorMode);
+        await settingsDb.set(
+            targetColorMode === 'light' ? 'readerLastLightTheme' : 'readerLastDarkTheme',
+            themeName
+        );
     },
 
     // WTR Reader Theme butonlarını kitap içi renk moduna göre dinamik güncelle

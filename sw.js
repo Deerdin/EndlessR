@@ -1,6 +1,6 @@
 // ================= SERVICE WORKER (sw.js) - ÇEVRİMDIŞI ÖNBELLEK YÖNETİMİ =================
 
-const CACHE_NAME = 'endlessr-reader-v5';
+const CACHE_NAME = 'endlessr-reader-v26';
 
 // Önbelleğe alınacak kaynaklar (Yerel dosyalar ve CDN kütüphaneleri)
 const ASSETS_TO_CACHE = [
@@ -58,9 +58,9 @@ self.addEventListener('fetch', (e) => {
     const isLocalRequest = e.request.url.startsWith(self.location.origin);
 
     if (isLocalRequest) {
-        // Yerel dosyalar için Network-First (Önce Ağ, Çevrimdışıyken Önbellek)
+        // Yerel dosyalar için Network-First (Tarayıcı HTTP önbelleğine takılmadan doğrudan sunucudan doğrula)
         e.respondWith(
-            fetch(e.request).then((response) => {
+            fetch(e.request, { cache: 'no-cache' }).then((response) => {
                 if (response && response.status === 200 && response.type === 'basic') {
                     const responseToCache = response.clone();
                     caches.open(CACHE_NAME).then((cache) => {

@@ -132,8 +132,12 @@ const app = {
         lucide.createIcons();
 
         // 2. Temel Uygulama Ayarlarını Yükle
-        const appTheme = await settingsDb.get('appTheme', 'dark');
-        await this.setAppTheme(appTheme);
+        let savedAppTheme = null;
+        try { savedAppTheme = localStorage.getItem('endlessr_app_theme'); } catch (e) {}
+        if (!savedAppTheme) {
+            savedAppTheme = await settingsDb.get('appTheme', 'dark');
+        }
+        await this.setAppTheme(savedAppTheme, true);
         
         // Capacitor Back Button Dinleyicisi
         if (window.Capacitor && typeof window.Capacitor.Plugins !== 'undefined') {
@@ -395,16 +399,17 @@ const app = {
     // Uygulama Genel Temasını Değiştir (Kitap içi temalarla senkronize)
     async setAppTheme(themeName, syncReader = true) {
         const normalized = themeName === 'light' ? 'light' : 'dark';
+        this.currentTheme = normalized;
+        try { localStorage.setItem('endlessr_app_theme', normalized); } catch (e) {}
+
         const isReaderActive = document.body.classList.contains('reader-active');
         document.body.className = '';
         document.body.classList.add(`theme-${normalized}`);
         if (isReaderActive) {
             document.body.classList.add('reader-active');
         }
-        
-        await settingsDb.set('appTheme', normalized);
 
-        // Ana sayfadaki Ay / Güneş tema butonunun ikonunu güncelle
+        // Ana sayfadaki Ay / Güneş tema butonunun ikonunu anında güncelle
         const btnHomeTheme = document.getElementById('btn-home-theme-toggle');
         if (btnHomeTheme) {
             const iconName = normalized === 'dark' ? 'sun' : 'moon';
@@ -424,23 +429,22 @@ const app = {
             }
         });
 
-        // Kitap içi tema ve renk moduyla senkronize et
+        // Kitap içi tema ve renk moduyla senkronize et (Önce senkron bellek/localStorage, sonra IndexedDB)
+        const lightThemes = ['light', 'sepia', 'warm', 'ocean', 'rose', 'forest'];
         if (syncReader) {
-            await settingsDb.set('readerColorMode', normalized);
-            const lightThemes = ['light', 'sepia', 'warm', 'ocean', 'rose', 'forest'];
-            const currentReaderTheme = await settingsDb.get('readerTheme', normalized);
-            const isCurrentLight = lightThemes.includes(currentReaderTheme);
-
-            let targetReaderTheme = currentReaderTheme;
-            if ((normalized === 'light' && !isCurrentLight) || (normalized === 'dark' && isCurrentLight)) {
-                const lastKey = normalized === 'light' ? 'readerLastLightTheme' : 'readerLastDarkTheme';
-                const remembered = await settingsDb.get(lastKey, normalized);
-                const isRememberedValid = normalized === 'light'
-                    ? lightThemes.includes(remembered)
-                    : !lightThemes.includes(remembered);
-                targetReaderTheme = isRememberedValid ? remembered : normalized;
-                await settingsDb.set('readerTheme', targetReaderTheme);
-            }
+            let targetReaderTheme = normalized;
+            try {
+                const lastLocalKey = normalized === 'light' ? 'endlessr_last_light_theme' : 'endlessr_last_dark_theme';
+                const rememberedLocal = localStorage.getItem(lastLocalKey);
+                if (rememberedLocal) {
+                    const isValid = normalized === 'light'
+                        ? lightThemes.includes(rememberedLocal)
+                        : !lightThemes.includes(rememberedLocal);
+                    if (isValid) targetReaderTheme = rememberedLocal;
+                }
+                localStorage.setItem('endlessr_reader_color_mode', normalized);
+                localStorage.setItem('endlessr_reader_theme', targetReaderTheme);
+            } catch (e) {}
 
             if (typeof reader !== 'undefined') {
                 reader.settings.colorMode = normalized;
@@ -461,12 +465,17 @@ const app = {
                     await reader.setReaderTheme(targetReaderTheme, false);
                 }
             }
+
+            await settingsDb.set('readerColorMode', normalized);
+            await settingsDb.set('readerTheme', targetReaderTheme);
         }
+
+        await settingsDb.set('appTheme', normalized);
     },
 
     async toggleAppTheme() {
-        const currentTheme = await settingsDb.get('appTheme', 'dark');
-        const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        const isCurrentlyLight = document.body.classList.contains('theme-light');
+        const nextTheme = isCurrentlyLight ? 'dark' : 'light';
         await this.setAppTheme(nextTheme, true);
     },
 
