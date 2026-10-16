@@ -61,18 +61,12 @@ const app = {
         // Donanımsal geri tuşu ve ekran geçmişi takibi başlat (Root Home)
         navHistory.push({ type: 'view', value: 'view-home' });
         
-        // Capacitor Back Button ve Durum Dinleyicileri
+        // Capacitor Back Button Dinleyicisi
         if (window.Capacitor && typeof window.Capacitor.Plugins !== 'undefined') {
             const { App } = window.Capacitor.Plugins;
             if (App) {
                 App.addListener('backButton', () => {
                     this.handleHardwareBack();
-                });
-                App.addListener('appStateChange', (state) => {
-                    if (!state.isActive && typeof supabaseService !== 'undefined') {
-                        console.log("Capacitor auto-sync: App moved to background, performing backup...");
-                        supabaseService.performBackup(true);
-                    }
                 });
             }
         }
@@ -80,24 +74,10 @@ const app = {
         // 3. Ekranları Yükle
         await this.loadLibrary();
         await this.loadWords();
-        await this.loadSettings();
         await this.loadReplacements();
 
-        // Supabase Eşitleme Servisini Başlat
-        if (typeof supabaseService !== 'undefined') {
-            await supabaseService.init();
-        }
-
-        // 3. Olay Dinleyicilerini Kur
+        // 4. Olay Dinleyicilerini Kur
         this.setupEventListeners();
-
-        // Çöp Kutusu Zamanlayıcısını Başlat
-        setInterval(() => {
-            this.updateTrashCountdowns();
-        }, 1000);
-
-        // İlk açılışta süresi dolmuş çöp kitaplarını temizle
-        await this.processTrashPurge();
     },
 
     // 1. Ekran Geçişlerini Yönet
@@ -130,24 +110,13 @@ const app = {
     async loadLibrary() {
         const bookGrid = document.getElementById('book-grid');
         const profileBookGrid = document.getElementById('profile-book-grid');
-        const trashBookGrid = document.getElementById('trash-book-grid');
         const emptyState = document.getElementById('library-empty');
-        const trashEmptyState = document.getElementById('trash-empty');
         const statsSummary = document.getElementById('profile-stats-text');
-        const segmentBtnTrash = document.getElementById('segment-btn-trash');
         
         if (bookGrid) bookGrid.innerHTML = '';
         if (profileBookGrid) profileBookGrid.innerHTML = '';
-        if (trashBookGrid) trashBookGrid.innerHTML = '';
         
         const books = await booksDb.getAllBooks();
-        const trashBooks = await booksDb.getTrashBooks();
-        
-        // Oturum durumuna göre çöp kutusu sekmesini göster/gizle
-        const isLoggedIn = typeof supabaseService !== 'undefined' && supabaseService.isAuthenticated();
-        if (segmentBtnTrash) {
-            segmentBtnTrash.style.display = isLoggedIn ? 'block' : 'none';
-        }
 
         if (books.length === 0) {
             if (emptyState) emptyState.style.display = 'flex';
@@ -175,19 +144,6 @@ const app = {
             });
         }
 
-        // Çöp Kutusu Gridini Doldur
-        if (trashBookGrid) {
-            if (!isLoggedIn || trashBooks.length === 0) {
-                if (trashEmptyState) trashEmptyState.style.display = 'flex';
-            } else {
-                if (trashEmptyState) trashEmptyState.style.display = 'none';
-                trashBooks.forEach(book => {
-                    const card = this.createTrashBookCard(book);
-                    trashBookGrid.appendChild(card);
-                });
-            }
-        }
-
         // Yeni eklenen ikonları çizdir
         lucide.createIcons();
     },
@@ -195,136 +151,15 @@ const app = {
     // Kitap Silme İşlemi
     async deleteBook(id, title, force = false) {
         if (force || confirm(`"${title}" kitabını silmek istediğinize emin misiniz?`)) {
-            const book = await booksDb.getBook(id);
-            const isLoggedIn = typeof supabaseService !== 'undefined' && supabaseService.isAuthenticated();
-            const isFav = book && book.isFavorite;
-
-            if (isLoggedIn && isFav) {
-                // Kitap favoride ve bulut oturumu açık ise çöp kutusuna taşı
-                if (book) {
-                    book.inTrash = true;
-                    book.deletedAt = Date.now();
-                    await booksDb.saveBook(book); // IndexedDB günceller, otomatik yedeklemeyi tetikler
-                    
-                    // Kitap detay paneli açıksa kapat
-                    const panel = document.getElementById('book-details-panel');
-                    if (panel) panel.classList.remove('open');
-                    
-                    alert("Kitap çöp kutusuna taşındı (1 dakika içinde silinecek).");
-                    await this.loadLibrary();
-                }
+            const success = await booksDb.deleteBook(id);
+            if (success) {
+                // Kitap detay paneli açıksa kapat
+                const panel = document.getElementById('book-details-panel');
+                if (panel) panel.classList.remove('open');
+                
+                await this.loadLibrary();
             } else {
-                // Çevrimdışı veya favori olmayan kitap ise kalıcı olarak sil
-                const success = await booksDb.deleteBook(id);
-                if (success) {
-                    // Kitap detay paneli açıksa kapat
-                    const panel = document.getElementById('book-details-panel');
-                    if (panel) panel.classList.remove('open');
-                    
-                    await this.loadLibrary();
-                } else {
-                    alert("Kitap silinemedi.");
-                }
-            }
-        }
-    },
-
-    // Çöp Kutusu Kitap Kartı Oluşturma
-    createTrashBookCard(book) {
-        const card = document.createElement('div');
-        card.className = 'book-card glass in-trash';
-        
-        let coverHtml = '';
-        if (book.coverUrl && !book.coverUrl.startsWith('blob:')) {
-            coverHtml = `<img src="${book.coverUrl}" alt="${book.title}" class="book-cover" style="opacity: 0.55;" loading="lazy">`;
-        } else {
-            const placeholder = utils.generateGradientPlaceholder(book.title, book.author);
-            coverHtml = `<img src="${placeholder}" alt="${book.title}" class="book-cover" style="opacity: 0.55;" loading="lazy">`;
-        }
-
-        const remainingMs = Math.max(0, 60000 - (Date.now() - book.deletedAt));
-        const remainingSec = Math.ceil(remainingMs / 1000);
-
-        card.innerHTML = `
-            <button class="btn-restore-book" title="Geri Yükle" style="position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-color); border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 3; color: white; padding: 0;">
-                <i data-lucide="rotate-ccw" style="width: 14px; height: 14px;"></i>
-            </button>
-            <div class="book-cover-container">
-                ${coverHtml}
-                <span class="book-badge" style="background: rgba(239, 68, 68, 0.85); color: white;">${remainingSec}sn</span>
-            </div>
-            <div class="book-info">
-                <h4 class="book-title" title="${book.title}" style="color: var(--text-secondary);">${book.title}</h4>
-                <span class="book-author">${book.author}</span>
-            </div>
-        `;
-
-        const btnRestore = card.querySelector('.btn-restore-book');
-        if (btnRestore) {
-            btnRestore.onclick = async (e) => {
-                e.stopPropagation();
-                await this.restoreBookFromTrash(book.id);
-            };
-        }
-
-        return card;
-    },
-
-    // Çöp Kutusundan Geri Yükleme
-    async restoreBookFromTrash(id) {
-        const book = await booksDb.getBook(id);
-        if (book) {
-            delete book.inTrash;
-            delete book.deletedAt;
-            await booksDb.saveBook(book); // IndexedDB günceller, otomatik yedeklemeyi tetikler
-            alert("Kitap geri yüklendi.");
-            await this.loadLibrary();
-        }
-    },
-
-    // Çöp Kutusu Geri Sayım Güncellemesi (Her saniye çalışır)
-    updateTrashCountdowns() {
-        const trashContainer = document.getElementById('trash-book-grid');
-        if (!trashContainer) return;
-
-        const cards = trashContainer.querySelectorAll('.book-card.in-trash');
-        let hasExpired = false;
-
-        cards.forEach(card => {
-            const badge = card.querySelector('.book-badge');
-            if (badge) {
-                const secText = badge.textContent;
-                let sec = parseInt(secText);
-                if (!isNaN(sec)) {
-                    if (sec > 1) {
-                        badge.textContent = (sec - 1) + 'sn';
-                    } else {
-                        hasExpired = true;
-                    }
-                }
-            }
-        });
-
-        if (hasExpired) {
-            this.processTrashPurge();
-        }
-    },
-
-    // Süresi Dolan Çöpteki Kitapları Kalıcı Olarak Temizle
-    async processTrashPurge() {
-        const keys = await db.books.keys();
-        let changed = false;
-        for (const key of keys) {
-            const book = await db.books.getItem(key);
-            if (book && book.inTrash && (Date.now() - book.deletedAt >= 60000)) {
-                await db.books.removeItem(key);
-                changed = true;
-            }
-        }
-        if (changed) {
-            await this.loadLibrary();
-            if (typeof supabaseService !== 'undefined') {
-                supabaseService.scheduleAutoBackup();
+                alert("Kitap silinemedi.");
             }
         }
     },
@@ -421,27 +256,6 @@ const app = {
         const success = await wordsDb.deleteWord(id);
         if (success) {
             this.loadWords(document.getElementById('search-words').value);
-        }
-    },
-
-    // 4. Ayarları Yükle
-    async loadSettings() {
-        // API Anahtarlarını yükle ve alanları doldur
-        const keys = await settingsDb.getApiKeys();
-        document.getElementById('gemini-key').value = keys.gemini;
-        document.getElementById('openai-key').value = keys.openai;
-    },
-
-    // API Anahtarlarını Kaydet
-    async saveApiKeys() {
-        const geminiKey = document.getElementById('gemini-key').value;
-        const openaiKey = document.getElementById('openai-key').value;
-
-        await settingsDb.saveApiKeys(geminiKey, openaiKey);
-        alert("API anahtarları kaydedildi.");
-        
-        if (typeof reader !== 'undefined' && reader.updateTranslationSettingsUI) {
-            await reader.updateTranslationSettingsUI();
         }
     },
 
@@ -812,11 +626,6 @@ const app = {
             this.loadWords(e.target.value);
         });
 
-        // API Anahtarı Kaydetme Butonu
-        document.getElementById('btn-save-keys').addEventListener('click', () => {
-            this.saveApiKeys();
-        });
-
         // OKUYUCU EYLEMLERİ
         // Geri Dön Butonu
         document.getElementById('btn-reader-back').addEventListener('click', () => {
@@ -975,8 +784,6 @@ const app = {
         if (btnTransNone) btnTransNone.addEventListener('click', () => reader.changeTranslationService('none'));
         const btnTransWeb = document.getElementById('btn-trans-web');
         if (btnTransWeb) btnTransWeb.addEventListener('click', () => reader.changeTranslationService('web'));
-        const btnTransAI = document.getElementById('btn-trans-ai');
-        if (btnTransAI) btnTransAI.addEventListener('click', () => reader.changeTranslationService('ai'));
 
         const btnWebThemeLight = document.getElementById('btn-webtheme-light');
         if (btnWebThemeLight) {
@@ -1072,11 +879,6 @@ const app = {
             const popover = document.getElementById('translate-popover');
             const word = popover.getAttribute('data-selected-word');
             translateService.speak(word);
-        });
-
-        // AI ile Açıklama
-        document.getElementById('btn-ai-explain').addEventListener('click', () => {
-            reader.explainWithAI();
         });
 
         // Kelimeyi Kaydetme
@@ -1192,174 +994,6 @@ const app = {
             });
         }
 
-        // Supabase Eşitleme Butonları, Captcha ve Form Girişleri
-        let currentCaptchaAnswer = null;
-
-        function generateCaptcha() {
-            const num1 = Math.floor(Math.random() * 9) + 1; // 1-9
-            const num2 = Math.floor(Math.random() * 9) + 1; // 1-9
-            const operators = ['+', '-'];
-            const operator = operators[Math.floor(Math.random() * operators.length)];
-            
-            let expressionText = '';
-            if (operator === '+') {
-                expressionText = `${num1} + ${num2} =`;
-                currentCaptchaAnswer = num1 + num2;
-            } else {
-                const max = Math.max(num1, num2);
-                const min = Math.min(num1, num2);
-                expressionText = `${max} - ${min} =`;
-                currentCaptchaAnswer = max - min;
-            }
-            
-            const captchaTextEl = document.getElementById('supabase-captcha-text');
-            if (captchaTextEl) {
-                captchaTextEl.textContent = expressionText;
-            }
-            const captchaInputEl = document.getElementById('supabase-captcha-input');
-            if (captchaInputEl) {
-                captchaInputEl.value = '';
-            }
-        }
-
-        // İlk sayfa açılışında captcha üret
-        generateCaptcha();
-
-        const btnCaptchaRefresh = document.getElementById('btn-supabase-captcha-refresh');
-        if (btnCaptchaRefresh) {
-            btnCaptchaRefresh.addEventListener('click', () => {
-                generateCaptcha();
-            });
-        }
-
-        function validateCaptcha() {
-            const inputEl = document.getElementById('supabase-captcha-input');
-            if (!inputEl) return true;
-            const userVal = parseInt(inputEl.value.trim(), 10);
-            if (isNaN(userVal) || userVal !== currentCaptchaAnswer) {
-                alert("Doğrulama kodu yanlış.");
-                generateCaptcha();
-                return false;
-            }
-            return true;
-        }
-
-        const btnSupabaseLogin = document.getElementById('btn-supabase-login');
-        if (btnSupabaseLogin) {
-            btnSupabaseLogin.addEventListener('click', async () => {
-                // Giriş yaparken şifre tekrarı alanını gizle
-                const groupConfirm = document.getElementById('group-supabase-confirm-password');
-                if (groupConfirm) groupConfirm.style.display = 'none';
-
-                const email = document.getElementById('supabase-email').value.trim();
-                const password = document.getElementById('supabase-password').value;
-                if (!email || !password) {
-                    alert("Lütfen e-posta ve şifrenizi girin.");
-                    return;
-                }
-
-                // Captcha doğrulaması
-                if (!validateCaptcha()) {
-                    return;
-                }
-                
-                btnSupabaseLogin.disabled = true;
-                const originalText = btnSupabaseLogin.innerHTML;
-                btnSupabaseLogin.innerHTML = '<i data-lucide="loader-2" class="spin-icon"></i> Giriş Yapılıyor...';
-                if (typeof lucide !== 'undefined') lucide.createIcons();
-
-                const result = await supabaseService.login(email, password);
-                
-                // Captcha yenile
-                generateCaptcha();
-                
-                if (result.error) {
-                    alert("Giriş başarısız.");
-                    btnSupabaseLogin.disabled = false;
-                    btnSupabaseLogin.innerHTML = originalText;
-                    if (typeof lucide !== 'undefined') lucide.createIcons();
-                }
-            });
-        }
-
-        const btnSupabaseRegister = document.getElementById('btn-supabase-register');
-        if (btnSupabaseRegister) {
-            btnSupabaseRegister.addEventListener('click', async () => {
-                const groupConfirm = document.getElementById('group-supabase-confirm-password');
-                
-                // Eğer şifre onaylama alanı gizliyse, alanı aç ve kullanıcıyı yönlendir
-                if (groupConfirm && groupConfirm.style.display === 'none') {
-                    groupConfirm.style.display = 'block';
-                    const confirmInput = document.getElementById('supabase-confirm-password');
-                    if (confirmInput) confirmInput.focus();
-                    alert("Lütfen şifrenizi tekrar girerek onaylayın.");
-                    return;
-                }
-
-                const email = document.getElementById('supabase-email').value.trim();
-                const password = document.getElementById('supabase-password').value;
-                const confirmInputEl = document.getElementById('supabase-confirm-password');
-                const confirmPassword = confirmInputEl ? confirmInputEl.value : '';
-
-                if (!email || !password || !confirmPassword) {
-                    alert("Lütfen tüm alanları doldurun.");
-                    return;
-                }
-                if (password !== confirmPassword) {
-                    alert("Şifreler uyuşmuyor.");
-                    if (confirmInputEl) confirmInputEl.focus();
-                    return;
-                }
-                if (password.length < 6) {
-                    alert("Şifre en az 6 karakter olmalıdır.");
-                    return;
-                }
-
-                // Captcha doğrulaması
-                if (!validateCaptcha()) {
-                    return;
-                }
-
-                btnSupabaseRegister.disabled = true;
-                const originalText = btnSupabaseRegister.innerHTML;
-                btnSupabaseRegister.innerHTML = '<i data-lucide="loader-2" class="spin-icon"></i> Kaydediliyor...';
-                if (typeof lucide !== 'undefined') lucide.createIcons();
-
-                const result = await supabaseService.register(email, password);
-                btnSupabaseRegister.disabled = false;
-                btnSupabaseRegister.innerHTML = originalText;
-                
-                // Captcha yenile
-                generateCaptcha();
-                if (typeof lucide !== 'undefined') lucide.createIcons();
-            });
-        }
-
-        const btnSupabaseDisconnect = document.getElementById('btn-supabase-disconnect');
-        if (btnSupabaseDisconnect) {
-            btnSupabaseDisconnect.addEventListener('click', () => {
-                supabaseService.disconnect();
-            });
-        }
-
-        const btnSupabaseBackup = document.getElementById('btn-supabase-backup');
-        if (btnSupabaseBackup) {
-            btnSupabaseBackup.addEventListener('click', () => {
-                supabaseService.performBackup();
-            });
-        }
-
-        // Supabase Otomatik Eşitleme Switch'i
-        const toggleSupabaseAutoSync = document.getElementById('supabase-auto-sync');
-        if (toggleSupabaseAutoSync) {
-            toggleSupabaseAutoSync.addEventListener('change', async (e) => {
-                await settingsDb.set('supabaseAutoSync', e.target.checked);
-                if (e.target.checked) {
-                    supabaseService.scheduleAutoBackup();
-                }
-            });
-        }
-
         // PDF Seçimi için global seçim değişikliğini dinle
         document.addEventListener('selectionchange', async () => {
             if (reader.currentBookType !== 'pdf') return;
@@ -1445,14 +1079,6 @@ const app = {
             }
         });
 
-        // Tarayıcı sekmesi kapatıldığında veya gizlendiğinde verileri buluta yedekle
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'hidden' && typeof supabaseService !== 'undefined') {
-                console.log("Browser visibility auto-sync: Tab hidden, performing backup...");
-                supabaseService.performBackup(true);
-            }
-        });
-
         // Tarayıcı geri tuşu (popstate) olayını dinle
         window.addEventListener('popstate', (e) => {
             if (!navHistory.isNavigatingBack) {
@@ -1503,15 +1129,6 @@ const app = {
         if (btnFav) {
             btnFav.onclick = async (e) => {
                 e.stopPropagation(); // Kitap okuyucuyu açmasını engelle
-                
-                const allBooks = await booksDb.getAllBooks();
-                const favCount = allBooks.filter(b => b.isFavorite).length;
-                
-                if (!book.isFavorite && favCount >= 5) {
-                    alert("En fazla 5 favori kitap seçilebilir.");
-                    return;
-                }
-                
                 book.isFavorite = !book.isFavorite;
                 
                 // IndexedDB veritabanında güncelle (dosyasıyla birlikte)
@@ -1523,11 +1140,6 @@ const app = {
                 
                 // Arayüzü güncelle
                 await this.loadLibrary();
-                
-                // Otomatik yedeklemeyi tetikle
-                if (typeof supabaseService !== 'undefined') {
-                    supabaseService.scheduleAutoBackup();
-                }
             };
         }
 

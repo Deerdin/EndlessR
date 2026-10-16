@@ -442,7 +442,7 @@ const reader = {
                 this.syncToTranslationSandbox(doc);
                 
                 // Eğer tam sayfa çevirisi aktifse, dökümanı çevir
-                if (this.settings.translationService === 'ai' || (this.settings.translationService === 'web' && this.settings.webService === 'google')) {
+                if (this.settings.translationService === 'web' && this.settings.webService === 'google') {
                     setTimeout(() => {
                         this.translateDocument(doc, this.settings.targetLang);
                     }, 50);
@@ -919,7 +919,7 @@ const reader = {
             this.lastPdfPage = pageNumber;
 
             // Eğer tam sayfa çevirisi aktifse, PDF metin katmanını çevir
-            if (this.settings.translationService === 'ai' || (this.settings.translationService === 'web' && this.settings.webService === 'google')) {
+            if (this.settings.translationService === 'web' && this.settings.webService === 'google') {
                 setTimeout(() => {
                     this.translateDocument(viewerContainer, this.settings.targetLang);
                 }, 50);
@@ -1147,8 +1147,6 @@ const reader = {
         const textPreview = document.getElementById('selected-text-preview');
         const translationText = document.getElementById('translation-text');
         const loader = document.getElementById('translation-loader');
-        const aiResult = document.getElementById('ai-translation-result');
-        const aiText = document.getElementById('ai-translation-text');
 
         // Popover içeriğini hazırla
         const displayWord = selectedText ? selectedText.trim() : text;
@@ -1157,9 +1155,7 @@ const reader = {
         popover.setAttribute('data-context-sentence', sentence);
         
         translationText.textContent = "";
-        aiText.textContent = "";
         loader.style.display = 'flex';
-        aiResult.style.display = 'none';
 
         // Popover'ı göster ve konumlandır
         popover.style.display = 'flex';
@@ -1182,56 +1178,30 @@ const reader = {
         popover.style.left = left + 'px';
         popover.style.top = top + 'px';
 
-        const service = this.settings.translationService || 'none';
-
-        if (service === 'ai') {
-            translationText.style.display = 'none';
-            aiResult.style.display = 'block';
-            aiText.innerHTML = '<i data-lucide="loader-2" class="spin-icon"></i> AI Düşünüyor...';
-            if (typeof lucide !== 'undefined') lucide.createIcons();
+        translationText.style.display = 'block';
+        
+        // Google Çeviri tetikle (Hem Türkçe hem de İngilizce)
+        try {
+            const translationTR = await translateService.translateGoogle(text, 'tr');
+            const translationEN = await translateService.translateGoogle(text, 'en');
             loader.style.display = 'none';
             
-            try {
-                const apiKeys = await settingsDb.getApiKeys();
-                let explanation = "";
-                if (apiKeys.gemini) {
-                    explanation = await translateService.explainWithGemini(text, sentence, apiKeys.gemini);
-                } else if (apiKeys.openai) {
-                    explanation = await translateService.explainWithOpenAI(text, sentence, apiKeys.openai);
-                } else {
-                    explanation = "Lütfen Ayarlar kısmından Gemini veya OpenAI API anahtarı ekleyin.";
-                }
-                aiText.textContent = explanation;
-            } catch (err) {
-                aiText.textContent = "AI Hatası: " + err.message;
-            }
-        } else {
-            translationText.style.display = 'block';
-            aiResult.style.display = 'none';
+            let htmlResult = "";
+            const cleanSelected = selectedText ? selectedText.trim() : "";
+            const cleanOriginal = text ? text.trim() : "";
             
-            // Google Çeviri tetikle (Hem Türkçe hem de İngilizce)
-            try {
-                const translationTR = await translateService.translateGoogle(text, 'tr');
-                const translationEN = await translateService.translateGoogle(text, 'en');
-                loader.style.display = 'none';
-                
-                let htmlResult = "";
-                const cleanSelected = selectedText ? selectedText.trim() : "";
-                const cleanOriginal = text ? text.trim() : "";
-                
-                if (cleanOriginal && cleanSelected && cleanOriginal.toLowerCase() !== cleanSelected.toLowerCase()) {
-                    htmlResult += `<strong>Orijinal:</strong> ${cleanOriginal}<br>`;
-                }
-                
-                htmlResult += `<strong>Türkçe:</strong> ${translationTR}`;
-                if (translationEN && translationEN.toLowerCase() !== translationTR.toLowerCase()) {
-                    htmlResult += `<br><strong>İngilizce:</strong> ${translationEN}`;
-                }
-                translationText.innerHTML = htmlResult;
-            } catch (e) {
-                loader.style.display = 'none';
-                translationText.textContent = "Çeviri servisi hatası.";
+            if (cleanOriginal && cleanSelected && cleanOriginal.toLowerCase() !== cleanSelected.toLowerCase()) {
+                htmlResult += `<strong>Orijinal:</strong> ${cleanOriginal}<br>`;
             }
+            
+            htmlResult += `<strong>Türkçe:</strong> ${translationTR}`;
+            if (translationEN && translationEN.toLowerCase() !== translationTR.toLowerCase()) {
+                htmlResult += `<br><strong>İngilizce:</strong> ${translationEN}`;
+            }
+            translationText.innerHTML = htmlResult;
+        } catch (e) {
+            loader.style.display = 'none';
+            translationText.textContent = "Çeviri servisi hatası.";
         }
     },
 
@@ -1280,38 +1250,6 @@ const reader = {
             if (window.app) window.app.loadWords();
         } else {
             alert("Kelime kaydedilemedi.");
-        }
-    },
-
-    // AI ile Kelimeyi Açıklatma (Gemini veya OpenAI API)
-    async explainWithAI() {
-        const popover = document.getElementById('translate-popover');
-        const word = popover.getAttribute('data-selected-word');
-        const context = popover.getAttribute('data-context-sentence');
-        const aiResult = document.getElementById('ai-translation-result');
-        const aiText = document.getElementById('ai-translation-text');
-
-        aiText.innerHTML = '<i data-lucide="loader-2" class="spin-icon"></i> AI Düşünüyor...';
-        lucide.createIcons(); // loader ikonunu oluştur
-        aiResult.style.display = 'block';
-
-        try {
-            // API anahtarlarını çek
-            const apiKeys = await settingsDb.getApiKeys();
-            let aiExplanation = "";
-
-            if (apiKeys.gemini) {
-                aiExplanation = await translateService.explainWithGemini(word, context, apiKeys.gemini);
-            } else if (apiKeys.openai) {
-                aiExplanation = await translateService.explainWithOpenAI(word, context, apiKeys.openai);
-            } else {
-                throw new Error("Ayarlar kısmından Gemini veya OpenAI API anahtarı eklemelisiniz.");
-            }
-
-            aiText.textContent = aiExplanation;
-
-        } catch (e) {
-            aiText.textContent = e.message;
         }
     },
 
@@ -1396,7 +1334,7 @@ const reader = {
         }
     },
 
-    // Çeviri Servisi Ayarlama (Web / Web+ / AI)
+    // Çeviri Servisi Ayarlama (None / Web)
     async changeTranslationService(service) {
         this.settings.translationService = service;
         await settingsDb.set('readerTranslationService', service);
@@ -1414,27 +1352,6 @@ const reader = {
         const langSection = document.querySelector('#tab-pane-settings .settings-section:nth-of-type(2)');
         const serviceRow = document.querySelector('.wtr-select-row');
         const sectionLabel = document.querySelector('#tab-pane-settings .settings-section:nth-of-type(2) .settings-section-label');
-        
-        let aiInfoRow = document.getElementById('wtr-ai-info-row');
-        if (!aiInfoRow && serviceRow) {
-            aiInfoRow = document.createElement('div');
-            aiInfoRow.id = 'wtr-ai-info-row';
-            aiInfoRow.style.cssText = `
-                display: none;
-                align-items: center;
-                gap: 8px;
-                width: 100%;
-                padding: 12px;
-                background: rgba(255,255,255,0.05);
-                border: 1px solid var(--border-color);
-                border-radius: var(--radius-sm);
-                font-size: 13px;
-                font-weight: 500;
-                color: var(--text-primary);
-                box-sizing: border-box;
-            `;
-            serviceRow.parentNode.appendChild(aiInfoRow);
-        }
 
         const currentService = this.settings.translationService || 'none';
 
@@ -1442,32 +1359,8 @@ const reader = {
             if (langSection) langSection.style.display = 'none';
         } else {
             if (langSection) langSection.style.display = 'flex';
-            
-            if (currentService === 'ai') {
-                if (sectionLabel) sectionLabel.innerHTML = 'ACTIVE AI ENGINE <span style="font-size: 10px; text-transform: none; font-weight: 500;">(AI Translation)</span>';
-                if (serviceRow) serviceRow.style.display = 'none';
-                if (aiInfoRow) {
-                    aiInfoRow.style.display = 'flex';
-                    // Find which AI engine is active
-                    try {
-                        const keys = await settingsDb.getApiKeys();
-                        if (keys.gemini) {
-                            aiInfoRow.innerHTML = `<i data-lucide="sparkles" style="width: 16px; height: 16px; color: #a855f7;"></i> <span>Gemini 2.5 Flash</span>`;
-                        } else if (keys.openai) {
-                            aiInfoRow.innerHTML = `<i data-lucide="brain" style="width: 16px; height: 16px; color: #10b981;"></i> <span>GPT-4o-Mini</span>`;
-                        } else {
-                            aiInfoRow.innerHTML = `<i data-lucide="alert-triangle" style="width: 16px; height: 16px; color: #f59e0b;"></i> <span style="color: #f59e0b;">AI Engine (API Key Missing!)</span>`;
-                        }
-                        if (typeof lucide !== 'undefined') lucide.createIcons();
-                    } catch (e) {
-                        aiInfoRow.innerHTML = `<span>AI Engine</span>`;
-                    }
-                }
-            } else {
-                if (sectionLabel) sectionLabel.innerHTML = 'READER LANGUAGE <span style="font-size: 10px; text-transform: none; font-weight: 500;">(Web Translation)</span>';
-                if (serviceRow) serviceRow.style.display = 'flex';
-                if (aiInfoRow) aiInfoRow.style.display = 'none';
-            }
+            if (sectionLabel) sectionLabel.innerHTML = 'READER LANGUAGE <span style="font-size: 10px; text-transform: none; font-weight: 500;">(Web Translation)</span>';
+            if (serviceRow) serviceRow.style.display = 'flex';
         }
     },
 
@@ -1498,7 +1391,7 @@ const reader = {
 
     async handleEntirePageTranslation() {
         const transService = this.settings.translationService || 'none';
-        if (transService === 'ai' || (transService === 'web' && this.settings.webService === 'google')) {
+        if (transService === 'web' && this.settings.webService === 'google') {
             await this.translateEntireBookPage(this.settings.targetLang);
         } else {
             this.restoreOriginalBookPage();
@@ -1685,7 +1578,7 @@ const reader = {
             return;
         }
 
-        const chunkSize = transService === 'ai' ? 30 : 15;
+        const chunkSize = 15;
         const promises = [];
         let successCount = 0;
 
@@ -1738,65 +1631,6 @@ const reader = {
     },
 
     async translateTextsBatch(texts, targetLang) {
-        const transService = this.settings.translationService || 'web';
-        
-        if (transService === 'ai') {
-            try {
-                const apiKeys = await settingsDb.getApiKeys();
-                if (apiKeys.gemini || apiKeys.openai) {
-                    const results = new Array(texts.length);
-                    const missingIndexes = [];
-                    const missingTexts = [];
-                    
-                    // 1. Check persistent database cache
-                    for (let i = 0; i < texts.length; i++) {
-                        const cached = await translationsDb.getTranslation(texts[i]);
-                        if (cached) {
-                            results[i] = cached;
-                        } else {
-                            missingIndexes.push(i);
-                            missingTexts.push(texts[i]);
-                        }
-                    }
-                    
-                    // 2. If there are any missing paragraphs, translate them via API in a single batch request
-                    if (missingTexts.length > 0) {
-                        console.log(`AI Cache Miss: translating ${missingTexts.length} paragraphs`);
-                        let translatedParts = [];
-                        if (apiKeys.gemini) {
-                            translatedParts = await translateService.translateBatchWithGemini(missingTexts, targetLang, apiKeys.gemini);
-                        } else if (apiKeys.openai) {
-                            translatedParts = await translateService.translateBatchWithOpenAI(missingTexts, targetLang, apiKeys.openai);
-                        }
-                        
-                        if (translatedParts && translatedParts.length === missingTexts.length) {
-                            for (let k = 0; k < missingTexts.length; k++) {
-                                const origIdx = missingIndexes[k];
-                                results[origIdx] = translatedParts[k];
-                                // Save to persistent database cache
-                                await translationsDb.saveTranslation(missingTexts[k], translatedParts[k]);
-                            }
-                        } else {
-                            throw new Error(`AI Çeviri boyutu eşleşmedi: ${translatedParts ? translatedParts.length : 0} adet döndü, ${missingTexts.length} adet bekleniyordu.`);
-                        }
-                    } else {
-                        console.log("AI Cache Hit: all paragraphs loaded from local database.");
-                    }
-                    
-                    return results;
-                } else {
-                    throw new Error("Yapay zeka (AI) API anahtarı bulunamadı. Ayarlar kısmından Gemini veya OpenAI anahtarı ekleyin.");
-                }
-            } catch (err) {
-                console.error("AI batch translation failed, falling back to Google:", err);
-                if (!window.geminiAlertShown) {
-                    window.geminiAlertShown = true;
-                    alert("Standart çeviriye geçildi.");
-                    setTimeout(() => { window.geminiAlertShown = false; }, 10000);
-                }
-            }
-        }
-
         // Standard Google Translate (Web) - translate in parallel to avoid separator issues and ensure maximum purity
         try {
             const promises = texts.map(text => translateService.translateGoogle(text, targetLang));
@@ -2458,11 +2292,6 @@ const reader = {
         this.closeStylePanel();
         this.closeTOCPanel();
         this.hidePopover();
-
-        // Okuyucudan çıkıldığında son ilerlemeyi buluta yedekle
-        if (typeof supabaseService !== 'undefined') {
-            supabaseService.performBackup(true);
-        }
 
         // Ekran butonuna basarak kapatıldıysa tarayıcı geçmişini temizle ve eşitle
         if (typeof navHistory !== 'undefined' && !navHistory.isNavigatingBack) {

@@ -19,7 +19,7 @@ const db = {
         storeName: "words"
     }),
 
-    // Uygulama ayarları, temalar ve API anahtarları
+    // Uygulama ayarları ve temalar
     settings: localforage.createInstance({
         name: "EndlessR_DB",
         storeName: "settings"
@@ -29,12 +29,6 @@ const db = {
     replacements: localforage.createInstance({
         name: "EndlessR_DB",
         storeName: "replacements"
-    }),
-
-    // Çeviri önbelleği (İngilizce paragraf -> Türkçe çeviri)
-    translations: localforage.createInstance({
-        name: "EndlessR_DB",
-        storeName: "translations"
     })
 };
 
@@ -47,7 +41,7 @@ const booksDb = {
             const books = [];
             for (const key of keys) {
                 const book = await db.books.getItem(key);
-                if (book && !book.inTrash) {
+                if (book) {
                     // Dosya verisini (file) arayüzde taşımamak için kopyalayıp çıkarıyoruz
                     const { file, ...metadata } = book;
                     books.push(metadata);
@@ -57,26 +51,6 @@ const booksDb = {
             return books.sort((a, b) => b.addedAt - a.addedAt);
         } catch (err) {
             console.error("Kitaplar listelenirken hata oluştu:", err);
-            return [];
-        }
-    },
-
-    // Çöp kutusundaki kitapları listele
-    async getTrashBooks() {
-        try {
-            const keys = await db.books.keys();
-            const books = [];
-            for (const key of keys) {
-                const book = await db.books.getItem(key);
-                if (book && book.inTrash) {
-                    const { file, ...metadata } = book;
-                    books.push(metadata);
-                }
-            }
-            // Silinme tarihine göre sırala (yeniden eskiye)
-            return books.sort((a, b) => b.deletedAt - a.deletedAt);
-        } catch (err) {
-            console.error("Çöp kutusu listelenirken hata oluştu:", err);
             return [];
         }
     },
@@ -95,7 +69,6 @@ const booksDb = {
     async saveBook(book) {
         try {
             await db.books.setItem(book.id, book);
-            if (typeof supabaseService !== 'undefined') supabaseService.scheduleAutoBackup();
             return true;
         } catch (err) {
             console.error("Kitap kaydedilirken hata oluştu:", err);
@@ -107,7 +80,6 @@ const booksDb = {
     async deleteBook(id) {
         try {
             await db.books.removeItem(id);
-            if (typeof supabaseService !== 'undefined') supabaseService.scheduleAutoBackup();
             return true;
         } catch (err) {
             console.error("Kitap silinirken hata oluştu:", err);
@@ -170,7 +142,6 @@ const wordsDb = {
                 bookId: wordObj.bookId || "",
                 addedAt: Date.now()
             });
-            if (typeof supabaseService !== 'undefined') supabaseService.scheduleAutoBackup();
             return true;
         } catch (err) {
             console.error("Kelime kaydedilirken hata:", err);
@@ -182,7 +153,6 @@ const wordsDb = {
     async deleteWord(id) {
         try {
             await db.words.removeItem(id);
-            if (typeof supabaseService !== 'undefined') supabaseService.scheduleAutoBackup();
             return true;
         } catch (err) {
             console.error("Kelime silinirken hata:", err);
@@ -208,34 +178,11 @@ const settingsDb = {
     async set(key, value) {
         try {
             await db.settings.setItem(key, value);
-            // Trigger auto-backup for settings (excluding sync configuration keys to avoid loops)
-            const excludeKeys = [
-                'gdriveAccessToken', 'gdriveTokenExpiry', 'gdriveLastBackupTime', 'gdriveClientId', 'gdriveAutoSync',
-                'supabaseLastBackupTime'
-            ];
-            if (!excludeKeys.includes(key) && typeof supabaseService !== 'undefined') {
-                supabaseService.scheduleAutoBackup();
-            }
             return true;
         } catch (err) {
             console.error("Ayar kaydedilirken hata:", err);
             return false;
         }
-    },
-
-    // Tüm API Anahtarlarını getir
-    async getApiKeys() {
-        return {
-            gemini: await this.get('geminiKey', ''),
-            openai: await this.get('openaiKey', '')
-        };
-    },
-
-    // API Anahtarlarını kaydet
-    async saveApiKeys(geminiKey, openaiKey) {
-        await this.set('geminiKey', geminiKey.trim());
-        await this.set('openaiKey', openaiKey.trim());
-        return true;
     }
 };
 
@@ -268,7 +215,6 @@ const replacementsDb = {
                 bookId: bookId, // Belirli bir kitaba bağlı (boş ise global)
                 addedAt: Date.now()
             });
-            if (typeof supabaseService !== 'undefined') supabaseService.scheduleAutoBackup();
             return true;
         } catch (err) {
             console.error("Değişiklik kaydedilirken hata:", err);
@@ -280,32 +226,10 @@ const replacementsDb = {
     async deleteReplacement(id) {
         try {
             await db.replacements.removeItem(id);
-            if (typeof supabaseService !== 'undefined') supabaseService.scheduleAutoBackup();
             return true;
         } catch (err) {
             console.error("Değişiklik silinirken hata:", err);
             return false;
-        }
-    }
-};
-
-// 6. Çeviri Önbelleği Yardımcı Fonksiyonları
-const translationsDb = {
-    async getTranslation(originalText) {
-        try {
-            if (!originalText || !originalText.trim()) return null;
-            return await db.translations.getItem(originalText.trim());
-        } catch (err) {
-            console.error("Önbellekten çeviri okunurken hata:", err);
-            return null;
-        }
-    },
-    async saveTranslation(originalText, translatedText) {
-        try {
-            if (!originalText || !originalText.trim() || !translatedText || !translatedText.trim()) return;
-            await db.translations.setItem(originalText.trim(), translatedText.trim());
-        } catch (err) {
-            console.error("Çeviri önbelleğe kaydedilirken hata:", err);
         }
     }
 };

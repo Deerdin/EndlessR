@@ -11,7 +11,6 @@ const ASSETS_TO_CACHE = [
     './js/utils.js',
     './js/translate.js',
     './js/reader.js',
-    './js/gdrive.js',
     './js/app.js',
     './manifest.json',
     'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
@@ -51,10 +50,8 @@ self.addEventListener('activate', (e) => {
 
 // 3. İstekleri Yakalama (Fetch) - Akıllı Çevrimdışı Çalışma Stratejisi
 self.addEventListener('fetch', (e) => {
-    // API çağrılarını veya çeviri isteklerini önbelleğe alma (sadece statik kaynakları al)
-    if (e.request.url.includes('translate.googleapis.com') || 
-        e.request.url.includes('generativelanguage.googleapis.com') || 
-        e.request.url.includes('api.openai.com')) {
+    // Çeviri isteklerini önbelleğe alma (sadece statik kaynakları al)
+    if (e.request.url.includes('translate.googleapis.com')) {
         return; // Doğrudan ağa git
     }
 

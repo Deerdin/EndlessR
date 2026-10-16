@@ -1273,32 +1273,6 @@ body.theme-dark .translation-result, body.theme-night .translation-result {
     to { transform: rotate(360deg); }
 }
 
-/* AI Sonucu */
-.ai-translation-result {
-    margin-top: 6px;
-    border-top: 1px solid var(--border-color);
-    padding-top: 6px;
-}
-
-.ai-header {
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--accent-color);
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 4px;
-}
-
-.ai-text {
-    font-size: 12px;
-    line-height: 1.4;
-    color: var(--text-secondary);
-    user-select: text;
-}
-
 /* Eylem Butonları */
 .popover-footer {
     display: flex;

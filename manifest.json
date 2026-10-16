@@ -1,7 +1,7 @@
 {
   "name": "EndlessR EPUB & PDF E-Book Reader",
   "short_name": "EndlessR",
-  "description": "Premium, Çevrimdışı Destekli ve AI Entegrasyonlu Kitap Okuma Uygulaması",
+  "description": "Premium ve Çevrimdışı Destekli Kitap Okuma Uygulaması",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0e0e11",
