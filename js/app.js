@@ -4,16 +4,81 @@
 const navHistory = {
     stack: [],
     isNavigatingBack: false,
+    ignorePopStateCount: 0,
+    storageKey: 'endlessr_nav_stack',
+
+    saveToSession() {
+        try {
+            sessionStorage.setItem(this.storageKey, JSON.stringify(this.stack));
+        } catch (e) {
+            console.warn("NavHistory session save error:", e);
+        }
+    },
+
+    initFromSession() {
+        try {
+            const raw = sessionStorage.getItem(this.storageKey);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    this.stack = parsed;
+                    if (typeof window !== 'undefined' && window.history) {
+                        const currentHistIdx = (window.history.state && typeof window.history.state.stackIndex === 'number')
+                            ? window.history.state.stackIndex
+                            : -1;
+                        if (currentHistIdx < this.stack.length - 1) {
+                            window.history.replaceState({ stackIndex: 0 }, "");
+                            for (let i = 1; i < this.stack.length; i++) {
+                                window.history.pushState({ stackIndex: i }, "");
+                            }
+                        } else {
+                            window.history.replaceState({ stackIndex: this.stack.length - 1 }, "");
+                        }
+                    }
+                    return true;
+                }
+            }
+        } catch (e) {
+            console.warn("NavHistory session restore error:", e);
+        }
+        return false;
+    },
+
+    isSameAction(a, b) {
+        if (!a || !b || a.type !== b.type) return false;
+        if (a.type === 'view') {
+            const viewA = a.viewId || a.value;
+            const viewB = b.viewId || b.value;
+            return viewA === viewB && (a.segmentId || 'segment-books') === (b.segmentId || 'segment-books');
+        }
+        if (a.type === 'reader') {
+            if (a.bookId !== b.bookId || a.bookType !== b.bookType) return false;
+            if (a.bookType === 'epub' && a.spineIndex !== undefined && b.spineIndex !== undefined) {
+                if (typeof reader !== 'undefined' && reader.settings && reader.settings.readerType === 'old') {
+                    return a.location === b.location;
+                }
+                return a.spineIndex === b.spineIndex;
+            }
+            return a.location === b.location;
+        }
+        return a.value === b.value;
+    },
     
     push(action) {
         const isFirst = this.stack.length === 0;
         if (!isFirst) {
             const last = this.stack[this.stack.length - 1];
-            if (last.type === action.type && last.value === action.value) {
+            if (this.isSameAction(last, action)) {
+                if (action.type === 'reader' && action.location !== undefined) {
+                    last.location = action.location;
+                    if (action.spineIndex !== undefined) last.spineIndex = action.spineIndex;
+                    this.saveToSession();
+                }
                 return; // Yinelenen kaydı önle
             }
         }
         this.stack.push(action);
+        this.saveToSession();
 
         // Tarayıcı geçmişine de kaydet (popstate tetiklenmesi için)
         if (typeof window !== 'undefined' && window.history) {
@@ -24,11 +89,22 @@ const navHistory = {
             }
         }
     },
+
+    updateTopReaderLocation(location, spineIndex) {
+        if (this.stack.length === 0) return;
+        const top = this.stack[this.stack.length - 1];
+        if (top && top.type === 'reader') {
+            if (location !== undefined && location !== null) top.location = location;
+            if (spineIndex !== undefined && spineIndex !== null) top.spineIndex = spineIndex;
+            this.saveToSession();
+        }
+    },
     
     pop() {
         if (this.stack.length > 1) {
             const current = this.stack.pop();
             const previous = this.stack[this.stack.length - 1];
+            this.saveToSession();
             return { current, previous };
         }
         return null;
@@ -36,6 +112,7 @@ const navHistory = {
     
     clear() {
         this.stack = [];
+        this.saveToSession();
     }
 };
 
@@ -57,16 +134,13 @@ const app = {
         // 2. Temel Uygulama Ayarlarını Yükle
         const appTheme = await settingsDb.get('appTheme', 'dark');
         this.setAppTheme(appTheme);
-
-        // Donanımsal geri tuşu ve ekran geçmişi takibi başlat (Root Home)
-        navHistory.push({ type: 'view', value: 'view-home' });
         
         // Capacitor Back Button Dinleyicisi
         if (window.Capacitor && typeof window.Capacitor.Plugins !== 'undefined') {
             const { App } = window.Capacitor.Plugins;
             if (App) {
                 App.addListener('backButton', () => {
-                    this.handleHardwareBack();
+                    this.handleHardwareBack(false);
                 });
             }
         }
@@ -78,16 +152,58 @@ const app = {
 
         // 4. Olay Dinleyicilerini Kur
         this.setupEventListeners();
+
+        // 5. Oturum / Sayfa Yenileme Durumunu Geri Yükle
+        const hasRestoredSession = navHistory.initFromSession();
+        if (!hasRestoredSession) {
+            navHistory.push({ type: 'view', viewId: 'view-home', segmentId: 'segment-books' });
+        } else {
+            const topEntry = navHistory.stack[navHistory.stack.length - 1];
+            const lastViewEntry = [...navHistory.stack].reverse().find(item => item.type === 'view') || {
+                type: 'view',
+                viewId: 'view-home',
+                segmentId: 'segment-books'
+            };
+
+            navHistory.isNavigatingBack = true;
+            this.switchView(lastViewEntry.viewId || lastViewEntry.value || 'view-home', lastViewEntry.segmentId || 'segment-books');
+            navHistory.isNavigatingBack = false;
+
+            if (topEntry && topEntry.type === 'reader' && topEntry.bookId) {
+                await reader.openBook(topEntry.bookId, {
+                    isRestore: true,
+                    restoreLocation: topEntry.location
+                });
+            }
+        }
+    },
+
+    getActiveProfileSegment() {
+        const activeBtn = document.querySelector('.segment-btn.active');
+        return activeBtn ? activeBtn.getAttribute('data-segment') : 'segment-books';
+    },
+
+    activateProfileSegment(segmentId) {
+        if (!segmentId) return;
+        document.querySelectorAll('.segment-btn').forEach(b => {
+            b.classList.toggle('active', b.getAttribute('data-segment') === segmentId);
+        });
+        document.querySelectorAll('.segment-pane').forEach(pane => {
+            pane.classList.toggle('active', pane.id === segmentId);
+        });
     },
 
     // 1. Ekran Geçişlerini Yönet
-    switchView(viewId) {
+    switchView(viewId, segmentId = null) {
+        const targetView = document.getElementById(viewId);
+        if (!targetView) return;
+
         // Tüm görünümleri pasif yap
         document.querySelectorAll('.app-view').forEach(view => {
             view.classList.remove('active');
         });
         // İlgili görünümü aktif yap
-        document.getElementById(viewId).classList.add('active');
+        targetView.classList.add('active');
 
         // Navigasyon barı düğmelerini güncelle
         document.querySelectorAll('.nav-item').forEach(btn => {
@@ -97,9 +213,14 @@ const app = {
             }
         });
 
+        const currentSegment = segmentId || this.getActiveProfileSegment();
+        if (viewId === 'view-profile' && segmentId) {
+            this.activateProfileSegment(segmentId);
+        }
+
         // Geçmişe kaydet (eğer geri gidilmiyorsa)
         if (!navHistory.isNavigatingBack) {
-            navHistory.push({ type: 'view', value: viewId });
+            navHistory.push({ type: 'view', viewId: viewId, segmentId: currentSegment });
         }
 
         // Çeviri Popover'ını gizle
@@ -562,15 +683,10 @@ const app = {
         document.querySelectorAll('.segment-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const segmentId = e.currentTarget.getAttribute('data-segment');
-                
-                // Segment butonlarını güncelle
-                document.querySelectorAll('.segment-btn').forEach(b => b.classList.remove('active'));
-                e.currentTarget.classList.add('active');
-                
-                // Segment panellerini güncelle
-                document.querySelectorAll('.segment-pane').forEach(pane => pane.classList.remove('active'));
-                const targetPane = document.getElementById(segmentId);
-                if (targetPane) targetPane.classList.add('active');
+                this.activateProfileSegment(segmentId);
+                if (!navHistory.isNavigatingBack) {
+                    navHistory.push({ type: 'view', viewId: 'view-profile', segmentId: segmentId });
+                }
             });
         });
 
@@ -653,9 +769,9 @@ const app = {
         });
 
         // OKUYUCU EYLEMLERİ
-        // Geri Dön Butonu
+        // Geri Dön Butonu (Adım adım önceki sayfaya veya ekrana dön)
         document.getElementById('btn-reader-back').addEventListener('click', () => {
-            reader.closeReader();
+            this.handleHardwareBack(false);
         });
 
         // Yan Panel (TOC) Tetikleyici
@@ -1166,6 +1282,10 @@ const app = {
 
         // Tarayıcı geri tuşu (popstate) olayını dinle
         window.addEventListener('popstate', (e) => {
+            if (navHistory.ignorePopStateCount > 0) {
+                navHistory.ignorePopStateCount--;
+                return;
+            }
             if (!navHistory.isNavigatingBack) {
                 this.handleHardwareBack(true);
             }
@@ -1318,7 +1438,7 @@ const app = {
         }
     },
 
-    // 9. Donanımsal Geri Tuşu Mantığı
+    // 9. Donanımsal ve Uygulama İçi Geri Tuşu Mantığı
     handleHardwareBack(isPopState = false) {
         // A. Açık modalları ve popoverları kapat
         const popover = document.getElementById('translate-popover');
@@ -1373,20 +1493,72 @@ const app = {
             const prev = popped.previous;
             navHistory.isNavigatingBack = true;
             
-            // Eğer tetikleyici popstate değilse, tarayıcı geçmişini 1 adım geri çek
+            // Eğer tetikleyici popstate değilse, tarayıcı geçmişini 1 adım geri çek (çift tetiklemeyi önleyerek)
             if (!isPopState) {
+                navHistory.ignorePopStateCount++;
                 window.history.back();
+                setTimeout(() => {
+                    if (navHistory.ignorePopStateCount > 0) {
+                        navHistory.ignorePopStateCount = 0;
+                    }
+                }, 250);
             }
 
             if (prev.type === 'view') {
-                this.switchView(prev.value);
-                navHistory.isNavigatingBack = false;
+                if (document.getElementById('view-reader').style.display === 'flex' || document.body.classList.contains('reader-active')) {
+                    reader.closeReader(true);
+                }
+                this.switchView(prev.viewId || prev.value || 'view-home', prev.segmentId || 'segment-books');
+                setTimeout(() => {
+                    navHistory.isNavigatingBack = false;
+                }, 100);
+            } else if (prev.type === 'reader') {
+                const isReaderOpen = document.getElementById('view-reader').style.display === 'flex' && reader.currentBookId === prev.bookId;
+                if (!isReaderOpen) {
+                    reader.openBook(prev.bookId, {
+                        isRestore: true,
+                        restoreLocation: prev.location
+                    }).finally(() => {
+                        setTimeout(() => {
+                            navHistory.isNavigatingBack = false;
+                        }, 150);
+                    });
+                } else if (prev.bookType === 'epub' && reader.epubRendition) {
+                    if (prev.spineIndex !== undefined) reader.lastSpineIndex = prev.spineIndex;
+                    if (prev.location !== undefined) reader.lastEpubCfi = prev.location;
+                    reader.epubRendition.display(prev.location).then(() => {
+                        window.scrollTo(0, 0);
+                        setTimeout(() => {
+                            navHistory.isNavigatingBack = false;
+                        }, 150);
+                    }).catch(() => {
+                        navHistory.isNavigatingBack = false;
+                    });
+                } else if (prev.bookType === 'pdf' && reader.pdfDocument) {
+                    reader.lastPdfPage = prev.location;
+                    reader.pdfRendering = false;
+                    reader.renderPdfPage(prev.location).then(() => {
+                        window.scrollTo(0, 0);
+                        setTimeout(() => {
+                            navHistory.isNavigatingBack = false;
+                        }, 150);
+                    }).catch(() => {
+                        navHistory.isNavigatingBack = false;
+                    });
+                } else {
+                    navHistory.isNavigatingBack = false;
+                }
             } else if (prev.type === 'book') {
-                reader.closeReader();
+                reader.closeReader(true);
                 navHistory.isNavigatingBack = false;
             } else if (prev.type === 'chapter') {
                 if (reader.epubRendition) {
                     reader.epubRendition.display(prev.value).then(() => {
+                        window.scrollTo(0, 0);
+                        setTimeout(() => {
+                            navHistory.isNavigatingBack = false;
+                        }, 150);
+                    }).catch(() => {
                         navHistory.isNavigatingBack = false;
                     });
                 } else {
@@ -1394,16 +1566,32 @@ const app = {
                 }
             } else if (prev.type === 'page') {
                 if (reader.pdfDocument) {
+                    reader.pdfRendering = false;
                     reader.renderPdfPage(prev.value).then(() => {
+                        window.scrollTo(0, 0);
+                        setTimeout(() => {
+                            navHistory.isNavigatingBack = false;
+                        }, 150);
+                    }).catch(() => {
                         navHistory.isNavigatingBack = false;
                     });
                 } else {
                     navHistory.isNavigatingBack = false;
                 }
+            } else {
+                navHistory.isNavigatingBack = false;
             }
         } else {
+            // Stack'te tek eleman kaldıysa ve okuyucu açıksa ana ekrana dön
+            if (document.getElementById('view-reader').style.display === 'flex' || document.body.classList.contains('reader-active')) {
+                reader.closeReader(true);
+                navHistory.isNavigatingBack = true;
+                this.switchView('view-home', 'segment-books');
+                navHistory.isNavigatingBack = false;
+                return;
+            }
             // Stack bitti. Uygulamadan çık
-            if (window.Capacitor && window.Capacitor.Plugins.App) {
+            if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
                 window.Capacitor.Plugins.App.exitApp();
             }
         }

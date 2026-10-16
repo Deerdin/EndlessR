@@ -145,7 +145,7 @@ const reader = {
         autoUnlock: false
     },
 
-    async openBook(bookId) {
+    async openBook(bookId, options = {}) {
         try {
             // Kitabı IndexedDB'den al
             const book = await booksDb.getBook(bookId);
@@ -162,6 +162,7 @@ const reader = {
             this.currentBookType = book.type;
             this.bookData = book;
             this.detectedLang = book.detectedLang || null;
+            this.isRestoringBook = !!(options && options.isRestore);
 
             // Arayüzü hazırla
             document.getElementById('reader-book-title').textContent = book.title;
@@ -195,6 +196,7 @@ const reader = {
             
             // Okuyucu navigasyon geçmişi takibi için durum sıfırlama
             this.lastSpineIndex = null;
+            this.lastEpubCfi = null;
             this.lastPdfPage = null;
 
             // Ayarları yükle (Ana sayfa temasından bağımsız kitap içi tema ayarları)
@@ -259,15 +261,34 @@ const reader = {
             document.getElementById('btn-prev-page').style.display = 'none';
             document.getElementById('btn-next-page').style.display = 'none';
 
+            const targetStartLocation = (options && options.restoreLocation !== undefined && options.restoreLocation !== null)
+                ? options.restoreLocation
+                : book.lastLocation;
+
             // Kitap tipine göre okuyucuyu başlat
             if (book.type === 'epub') {
-                await this.initEpub(book.file, book.lastLocation);
+                await this.initEpub(book.file, targetStartLocation);
             } else if (book.type === 'pdf') {
-                await this.initPdf(book.file, book.lastLocation);
+                await this.initPdf(book.file, targetStartLocation);
             }
 
             // Temayı uygula
             await this.setReaderTheme(this.settings.theme);
+
+            // Eğer sayfa yenilemesinden geri yükleniyorsa dikey kaydırma konumunu da geri yükle
+            if (this.isRestoringBook) {
+                try {
+                    const rawScroll = sessionStorage.getItem('endlessr_reader_scroll');
+                    if (rawScroll) {
+                        const savedScroll = JSON.parse(rawScroll);
+                        if (savedScroll && savedScroll.bookId === bookId && savedScroll.scrollY > 0) {
+                            setTimeout(() => { window.scrollTo(0, savedScroll.scrollY); }, 80);
+                            setTimeout(() => { window.scrollTo(0, savedScroll.scrollY); }, 250);
+                        }
+                    }
+                } catch (e) {}
+            }
+            this.isRestoringBook = false;
 
             // Son okuma zamanını güncelle
             book.lastReadAt = Date.now();
@@ -275,11 +296,6 @@ const reader = {
             
             // Kütüphaneyi arka planda yenile
             if (window.app) window.app.loadLibrary();
-
-            // Kitap açılışını geçmişe kaydet
-            if (typeof navHistory !== 'undefined' && !navHistory.isNavigatingBack) {
-                navHistory.push({ type: 'book', value: bookId });
-            }
 
             // Bind voice synthesis voices loaded event
             if ('speechSynthesis' in window) {
@@ -290,6 +306,7 @@ const reader = {
             }
 
         } catch (err) {
+            this.isRestoringBook = false;
             console.error("Kitap açılırken hata:", err);
             alert("Kitap yüklenemedi.");
             this.closeReader();
@@ -384,22 +401,47 @@ const reader = {
             }
             const currentSpineIndex = (location && location.start) ? location.start.index : 0;
             const spineChanged = this.lastSpineIndex !== null && this.lastSpineIndex !== currentSpineIndex;
+            const cfi = (location && location.start && location.start.cfi) ? location.start.cfi : this.epubLocation;
 
             this.updateEpubProgressUI(true);
             
-            // Bölüm geçişinde geçmişe kaydet (NavHistory)
+            // Bölüm veya sayfa geçişinde geçmişe kaydet (NavHistory)
             if (typeof navHistory !== 'undefined' && !navHistory.isNavigatingBack) {
-                if (this.lastSpineIndex !== currentSpineIndex && location && location.start) {
-                    navHistory.push({ type: 'chapter', value: location.start.cfi });
+                if (this.isRestoringBook) {
+                    navHistory.updateTopReaderLocation(cfi, currentSpineIndex);
+                } else if (this.settings.readerType === 'old') {
+                    if (this.lastEpubCfi !== cfi && cfi) {
+                        navHistory.push({
+                            type: 'reader',
+                            bookId: this.currentBookId,
+                            bookType: 'epub',
+                            location: cfi,
+                            spineIndex: currentSpineIndex
+                        });
+                    }
+                } else {
+                    if (this.lastSpineIndex !== currentSpineIndex) {
+                        navHistory.push({
+                            type: 'reader',
+                            bookId: this.currentBookId,
+                            bookType: 'epub',
+                            location: cfi,
+                            spineIndex: currentSpineIndex
+                        });
+                    } else {
+                        navHistory.updateTopReaderLocation(cfi, currentSpineIndex);
+                    }
                 }
             }
             this.lastSpineIndex = currentSpineIndex;
+            this.lastEpubCfi = cfi;
 
             // Bölüm geçişinde iframe ve pencere scrollunu en üste sıfırla
             const viewer = document.getElementById('epub-viewer');
             if (viewer) viewer.scrollTop = 0;
-            if (spineChanged) {
+            if (spineChanged && !this.isRestoringBook) {
                 window.scrollTo(0, 0);
+                try { sessionStorage.removeItem('endlessr_reader_scroll'); } catch (e) {}
             }
         });
 
@@ -982,8 +1024,16 @@ const reader = {
  
             // PDF sayfa geçişini geçmişe kaydet (NavHistory)
             if (typeof navHistory !== 'undefined' && !navHistory.isNavigatingBack) {
-                if (this.lastPdfPage !== pageNumber) {
-                    navHistory.push({ type: 'page', value: pageNumber });
+                if (this.isRestoringBook) {
+                    navHistory.updateTopReaderLocation(pageNumber, pageNumber);
+                } else if (this.lastPdfPage !== pageNumber) {
+                    navHistory.push({
+                        type: 'reader',
+                        bookId: this.currentBookId,
+                        bookType: 'pdf',
+                        location: pageNumber,
+                        spineIndex: pageNumber
+                    });
                 }
             }
             this.lastPdfPage = pageNumber;
@@ -2581,7 +2631,7 @@ const reader = {
     },
 
     // Okuyucuyu Kapat ve Kütüphaneye Dön
-    closeReader() {
+    closeReader(skipHistoryCleanup = false) {
         this.stopTTS();
         
         document.getElementById('view-reader').style.display = 'none';
@@ -2589,6 +2639,7 @@ const reader = {
         document.documentElement.classList.remove('reader-active');
         document.body.classList.remove('reader-active');
         window.scrollTo(0, 0);
+        try { sessionStorage.removeItem('endlessr_reader_scroll'); } catch (e) {}
         
         // Belleği boşalt
         if (this.epubBook) {
@@ -2612,8 +2663,8 @@ const reader = {
             window.app.loadLibrary();
         }
 
-        // Ekran butonuna basarak kapatıldıysa tarayıcı geçmişini temizle ve eşitle
-        if (typeof navHistory !== 'undefined' && !navHistory.isNavigatingBack) {
+        // Doğrudan "Kapat" butonuna basarak kapatıldıysa tarayıcı geçmişini temizle ve eşitle
+        if (!skipHistoryCleanup && typeof navHistory !== 'undefined' && !navHistory.isNavigatingBack) {
             let popCount = 0;
             while (navHistory.stack.length > 1) {
                 const top = navHistory.stack[navHistory.stack.length - 1];
@@ -2623,12 +2674,17 @@ const reader = {
                 navHistory.stack.pop();
                 popCount++;
             }
+            navHistory.saveToSession();
             if (popCount > 0) {
                 navHistory.isNavigatingBack = true;
+                navHistory.ignorePopStateCount++;
                 window.history.go(-popCount);
                 setTimeout(() => {
                     navHistory.isNavigatingBack = false;
-                }, 100);
+                    if (navHistory.ignorePopStateCount > 0) {
+                        navHistory.ignorePopStateCount = 0;
+                    }
+                }, 250);
             }
         }
     }
@@ -2652,6 +2708,18 @@ window.addEventListener('scroll', () => {
         }
     }
     lastScrollY = currentScrollY;
+
+    // Sayfa yenilendiğinde (F5) dikey kaydırma konumunu korumak için sessionStorage'a kaydet
+    if (reader.currentBookId && !reader.isRestoringBook) {
+        try {
+            sessionStorage.setItem('endlessr_reader_scroll', JSON.stringify({
+                bookId: reader.currentBookId,
+                spineIndex: reader.lastSpineIndex,
+                pdfPage: reader.pdfCurrentPage,
+                scrollY: currentScrollY
+            }));
+        } catch (e) {}
+    }
 
     // 2. Okuma Konumunu Kaydetme Entegrasyonu
     if (reader.currentBookType === 'epub') {
