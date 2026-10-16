@@ -1415,13 +1415,24 @@ body.theme-dark .translation-result, body.theme-night .translation-result {
     display: block;
 }
 
-/* Tab İçerik Yönetimi */
+/* Kompakt mod: panel ilk açıldığında yalnızca sekme butonları görünür */
+.reader-options-panel:not(.expanded) .panel-drag-handle {
+    display: none;
+}
+
+/* Tab İçerik Yönetimi (yukarı doğru açılma animasyonu) */
 .panel-tab-contents {
-    padding: 12px 20px 20px;
+    padding: 0 20px;
     overflow-y: auto;
+    max-height: 0;
+    transition: max-height var(--transition-slow) cubic-bezier(0.1, 0.76, 0.55, 0.94), padding var(--transition-slow);
+}
+.reader-options-panel.expanded .panel-tab-contents {
+    padding: 12px 20px 20px;
+    max-height: calc(75vh - 110px);
 }
 .panel-tab-contents:not(:has(.tab-pane.active)) {
-    padding: 0;
+    padding: 0 20px;
 }
 .tab-pane {
     display: none;

@@ -843,23 +843,16 @@ const app = {
             }
         });
         
-        // Sürükleme çizgisi / kapatma butonu ile kapatma
+        // Sürükleme çizgisi (aşağı ok): açık sekme içeriğini daraltıp yalnızca sekme butonlarını bırakır
         document.getElementById('panel-drag-handle').addEventListener('click', () => {
-            reader.closeStylePanel();
+            reader.collapsePanelTabs();
         });
 
-        // Panel İçi Tab (Sekme) Geçişleri
+        // Panel İçi Tab (Sekme) Geçişleri: seçilen sekme yukarı doğru genişler, aynı sekmeye tekrar basınca daralır
         document.querySelectorAll('.panel-tab-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const targetTabPaneId = e.currentTarget.getAttribute('data-tab');
-                
-                // Tab butonlarını pasifleştir ve tıklanana aktiflik ver
-                document.querySelectorAll('.panel-tab-btn').forEach(b => b.classList.remove('active'));
-                e.currentTarget.classList.add('active');
-                
-                // Tab içerik alanlarını gizle ve hedefleneni göster
-                document.querySelectorAll('.reader-options-panel .tab-pane').forEach(pane => pane.classList.remove('active'));
-                document.getElementById(targetTabPaneId).classList.add('active');
+                reader.togglePanelTab(targetTabPaneId);
             });
         });
 
@@ -1530,7 +1523,11 @@ const app = {
 
         const optionsPanel = document.getElementById('reader-options-panel');
         if (optionsPanel && optionsPanel.classList.contains('open')) {
-            reader.closeStylePanel();
+            if (optionsPanel.classList.contains('expanded')) {
+                reader.collapsePanelTabs();
+            } else {
+                reader.closeStylePanel();
+            }
             if (isPopState) {
                 window.history.pushState({ stackIndex: navHistory.stack.length - 1 }, "");
             }

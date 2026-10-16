@@ -1404,27 +1404,50 @@ const reader = {
     },
 
     openStylePanel() {
-        // Hiçbir sekme aktif değilse varsayılan olarak Bölüm (tab-pane-read) sekmesini aktif et
-        const activeTabBtn = document.querySelector('.panel-tab-btn.active');
-        const activeTabPane = document.querySelector('.reader-options-panel .tab-pane.active');
-        if (!activeTabBtn || !activeTabPane) {
-            document.querySelectorAll('.panel-tab-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.reader-options-panel .tab-pane').forEach(pane => pane.classList.remove('active'));
-            const defaultBtn = document.querySelector('.panel-tab-btn[data-tab="tab-pane-read"]');
-            const defaultPane = document.getElementById('tab-pane-read');
-            if (defaultBtn) defaultBtn.classList.add('active');
-            if (defaultPane) defaultPane.classList.add('active');
-        }
-        
+        // Panel ilk açılışta yalnızca alttaki 4 sekme butonuyla (Bölüm, Görünüm, Ses, Ayarlar) kompakt açılır
+        this.collapsePanelTabs();
         document.getElementById('reader-options-panel').classList.add('open');
         const header = document.querySelector('.reader-header');
         if (header) header.classList.add('open');
     },
 
     closeStylePanel() {
-        document.getElementById('reader-options-panel').classList.remove('open');
+        const panel = document.getElementById('reader-options-panel');
+        panel.classList.remove('open');
         const header = document.querySelector('.reader-header');
         if (header) header.classList.remove('open');
+        // Kapanış animasyonu bittikten sonra içerikleri sıfırla
+        setTimeout(() => {
+            if (!panel.classList.contains('open')) this.collapsePanelTabs();
+        }, 350);
+    },
+
+    // Seçilen sekmenin içeriğini yukarı doğru genişleterek gösterir (aynı sekmeye tekrar basılırsa daraltır)
+    togglePanelTab(tabPaneId) {
+        const panel = document.getElementById('reader-options-panel');
+        const targetPane = document.getElementById(tabPaneId);
+        if (!panel || !targetPane) return;
+
+        if (panel.classList.contains('expanded') && targetPane.classList.contains('active')) {
+            this.collapsePanelTabs();
+            return;
+        }
+
+        document.querySelectorAll('.panel-tab-btn').forEach(b => {
+            b.classList.toggle('active', b.getAttribute('data-tab') === tabPaneId);
+        });
+        document.querySelectorAll('.reader-options-panel .tab-pane').forEach(pane => {
+            pane.classList.toggle('active', pane.id === tabPaneId);
+        });
+        panel.classList.add('expanded');
+    },
+
+    // Sekme içeriklerini gizleyip paneli yalnızca sekme butonlarına daraltır
+    collapsePanelTabs() {
+        const panel = document.getElementById('reader-options-panel');
+        if (panel) panel.classList.remove('expanded');
+        document.querySelectorAll('.panel-tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.reader-options-panel .tab-pane').forEach(pane => pane.classList.remove('active'));
     },
 
     // Yazı Boyutu Artırma / Azaltma
