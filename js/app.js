@@ -767,6 +767,14 @@ const app = {
             reader.adjustPadding(4);
         });
 
+        // Manuel Boşluk Düzeltme Butonu (Görünüm Tabı)
+        const btnFixSpacing = document.getElementById('btn-fix-spacing');
+        if (btnFixSpacing) {
+            btnFixSpacing.addEventListener('click', () => {
+                reader.toggleFixSpacing();
+            });
+        }
+
         // Yazı Tipi Butonları (Görünüm Tabı)
         document.querySelectorAll('.font-family-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {

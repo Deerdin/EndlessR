@@ -139,6 +139,7 @@ const reader = {
         colorMode: "dark",
         tapToTranslate: false,
         padding: 8,
+        fixSpacing: false,
         readerType: "single",
         translationService: "web",
         autoUnlock: false
@@ -205,6 +206,7 @@ const reader = {
             
             this.settings.tapToTranslate = await settingsDb.get('readerTapToTranslate', false);
             this.settings.padding = await settingsDb.get('readerPadding', 8);
+            this.settings.fixSpacing = await settingsDb.get('readerFixSpacing', false);
             this.settings.readerType = await settingsDb.get('readerType', 'single');
             this.settings.translationService = await settingsDb.get('readerTranslationService', 'none');
             this.settings.autoUnlock = await settingsDb.get('readerAutoUnlock', false);
@@ -222,6 +224,7 @@ const reader = {
             document.getElementById('font-size-val').textContent = this.settings.fontSize + '%';
             document.getElementById('lineheight-val').textContent = this.settings.lineHeight;
             document.getElementById('padding-val').textContent = this.settings.padding + 'px';
+            this.updateFixSpacingUI();
 
             // Yazı tipi butonlarının aktiflik durumunu senkronize et
             document.querySelectorAll('.font-family-btn').forEach(btn => {
@@ -1697,6 +1700,7 @@ const reader = {
             doc.body.setAttribute('data-translated-to', cleanTarget);
             doc.body.setAttribute('data-translated-by', transService);
         }
+        this.applySpacingFixToDoc(doc);
     },
 
     async translateTextsBatch(texts, targetLang) {
@@ -1727,6 +1731,7 @@ const reader = {
             doc.body.removeAttribute('data-translated-to');
             doc.body.removeAttribute('data-translated-by');
         }
+        this.applySpacingFixToDoc(doc);
     },
 
     // Yazı Tipi Değiştirme
@@ -1870,7 +1875,109 @@ const reader = {
                 }
             `;
         }
+        if (this.settings.fixSpacing) {
+            css += `
+                /* Manuel Boşluk Düzeltme: İki yana yaslama kaynaklı kelime arası boşlukları kaldır */
+                p, li, blockquote, div:not(.epub-chapter-footer) {
+                    text-align: left !important;
+                    word-spacing: normal !important;
+                    letter-spacing: normal !important;
+                }
+                h1, h2, h3, h4, h5, h6, [align="center"], .center {
+                    text-align: center !important;
+                }
+            `;
+        }
         customStyle.textContent = css;
+        this.applySpacingFixToDoc(doc);
+    },
+
+    // Boşluk Düzeltme Butonu Arayüzünü Güncelleme
+    updateFixSpacingUI() {
+        const btn = document.getElementById('btn-fix-spacing');
+        const label = document.getElementById('fix-spacing-label');
+        if (!btn || !label) return;
+
+        if (this.settings.fixSpacing) {
+            label.textContent = 'Açık';
+            btn.style.borderColor = 'var(--accent-color)';
+            btn.style.backgroundColor = 'rgba(99, 102, 241, 0.12)';
+            btn.style.color = 'var(--accent-color)';
+        } else {
+            label.textContent = 'Kapalı';
+            btn.style.borderColor = '';
+            btn.style.backgroundColor = '';
+            btn.style.color = '';
+        }
+    },
+
+    // Manuel Boşluk Düzeltme Ayarını Açma / Kapatma
+    async toggleFixSpacing() {
+        this.settings.fixSpacing = !this.settings.fixSpacing;
+        await settingsDb.set('readerFixSpacing', this.settings.fixSpacing);
+        this.updateFixSpacingUI();
+
+        if (this.currentBookType === 'epub') {
+            this.applyEpubStyles();
+        }
+    },
+
+    // Paragraf ve Özel Blok (LitRPG Statü Ekranı vb.) Boşluklarını Akıllı Düzenleme
+    applySpacingFixToDoc(doc) {
+        if (!doc || !doc.body) return;
+        const paragraphs = Array.from(doc.body.querySelectorAll('p'));
+
+        if (!this.settings.fixSpacing) {
+            paragraphs.forEach(p => {
+                if (p.getAttribute('data-spacing-adjusted') === 'true') {
+                    p.style.marginTop = p.getAttribute('data-orig-mt') || '';
+                    p.style.marginBottom = p.getAttribute('data-orig-mb') || '';
+                    p.removeAttribute('data-spacing-adjusted');
+                }
+            });
+            return;
+        }
+
+        const isStatusOrSpecialLine = (p) => {
+            if (!p) return false;
+            const text = (p.innerText || p.textContent || '').trim();
+            if (!text) return true;
+            if (p.querySelector('br')) return true;
+            if (text.length < 85) {
+                // "Adı: Asher", "Yetenek: (Kilitli)" gibi iki nokta üst üste içeren kısa statü satırları
+                if (/^[^.!?]{1,35}:\s*.+$/.test(text)) return true;
+                // Köşeli parantez veya sistem bildirimi satırları
+                if (/^[\[<【].*[\]>】]$/.test(text)) return true;
+                // Tamamı kalın (bold) olan kısa satırlar
+                const boldChild = p.querySelector('b, strong');
+                if (boldChild && (boldChild.innerText || boldChild.textContent || '').trim().length >= text.length * 0.8) {
+                    return true;
+                }
+                // Cümle bitiş noktalama işareti olmayan kısa satırlar
+                if (!/[.!?…"”'’]$/.test(text)) return true;
+            }
+            return false;
+        };
+
+        paragraphs.forEach(p => {
+            if (!p.hasAttribute('data-orig-mt')) {
+                p.setAttribute('data-orig-mt', p.style.marginTop || '');
+                p.setAttribute('data-orig-mb', p.style.marginBottom || '');
+            }
+
+            if (isStatusOrSpecialLine(p)) {
+                // Statü ekranı satırlarının kendi grup yapısını, girintisini ve bitişikliğini koru
+                if (p.getAttribute('data-spacing-adjusted') === 'true') {
+                    p.style.marginTop = p.getAttribute('data-orig-mt') || '';
+                    p.style.marginBottom = p.getAttribute('data-orig-mb') || '';
+                    p.removeAttribute('data-spacing-adjusted');
+                }
+            } else {
+                // Normal anlatım/diyalog paragraflarına okunaklı paragraf arası boşluk uygula
+                p.style.setProperty('margin-bottom', '0.75em', 'important');
+                p.setAttribute('data-spacing-adjusted', 'true');
+            }
+        });
     },
 
     // Kitap İçi Renk Paleti Modu Seçme (Light / Dark - Ana sayfa temasından bağımsız)
