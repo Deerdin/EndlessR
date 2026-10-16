@@ -2176,34 +2176,65 @@ body.theme-light .wtr-select {
 
 /* Chrome/Safari Adres Çubuğu Gizleme Desteği (Root Scroll) */
 body.reader-active, html.reader-active {
+    display: block !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
     height: auto !important;
+    min-height: 100vh !important;
+    min-height: 100dvh !important;
 }
 
+body.reader-active #app-container {
+    height: auto !important;
+    min-height: 100vh !important;
+    min-height: 100dvh !important;
+    overflow: visible !important;
+    border-radius: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 auto !important;
+}
+
+body.reader-active .app-view,
 body.reader-active .app-navbar {
     display: none !important;
 }
 
 body.reader-active .reader-view {
-    position: absolute !important;
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: 100% !important;
     height: auto !important;
     min-height: 100vh !important;
+    min-height: 100dvh !important;
     overflow: visible !important;
+    transform: none !important;
+    animation: none !important;
 }
 
 body.reader-active .reader-container {
     height: auto !important;
+    min-height: 100vh !important;
+    min-height: 100dvh !important;
     overflow: visible !important;
 }
 
 body.reader-active .viewer-pane {
     height: auto !important;
+    min-height: 100vh !important;
+    min-height: 100dvh !important;
     overflow: visible !important;
 }
 
-body.reader-active #epub-viewer, body.reader-active #pdf-viewer {
+body.reader-active #epub-viewer,
+body.reader-active #pdf-viewer,
+body.reader-active #epub-viewer .epub-container {
     height: auto !important;
+    min-height: 100vh !important;
+    min-height: 100dvh !important;
     overflow: visible !important;
 }
 
@@ -2218,6 +2249,3 @@ body.reader-active .nav-arrow {
 body.reader-active .pdf-scroll-mode {
     padding-top: calc(env(safe-area-inset-top, 35px) + 60px) !important;
 }
-
-
-

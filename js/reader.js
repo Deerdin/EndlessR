@@ -333,7 +333,7 @@ const reader = {
 
         this.epubRendition = this.epubBook.renderTo("epub-viewer", {
             width: "100%",
-            height: "100%",
+            height: rType === "old" ? window.innerHeight : "100%",
             flow: epubFlow,
             manager: epubManager,
             allowScriptedContent: true
@@ -380,6 +380,7 @@ const reader = {
                 this.epubLocation = location.start.cfi;
             }
             const currentSpineIndex = (location && location.start) ? location.start.index : 0;
+            const spineChanged = this.lastSpineIndex !== null && this.lastSpineIndex !== currentSpineIndex;
 
             this.updateEpubProgressUI(true);
             
@@ -391,9 +392,12 @@ const reader = {
             }
             this.lastSpineIndex = currentSpineIndex;
 
-            // Bölüm geçişinde iframe scrollunu en üste sıfırla
+            // Bölüm geçişinde iframe ve pencere scrollunu en üste sıfırla
             const viewer = document.getElementById('epub-viewer');
             if (viewer) viewer.scrollTop = 0;
+            if (spineChanged) {
+                window.scrollTo(0, 0);
+            }
         });
 
         // EPUB Lokasyonları Hazır Olduğunda
@@ -1797,6 +1801,7 @@ const reader = {
                     padding: calc(env(safe-area-inset-top, 30px) + 15px) ${padVal}px 30px !important;
                     width: 100% !important;
                     max-width: 100% !important;
+                    min-height: 100vh !important;
                     box-sizing: border-box !important;
                     background-color: ${colors.bg} !important;
                     color: ${colors.fg} !important;
@@ -1890,10 +1895,14 @@ const reader = {
         this.settings.theme = themeName;
         await settingsDb.set('readerTheme', themeName);
 
-        // Reader element sınıfını güncelle
+        const colors = this.getThemeColors(themeName);
+
+        // Reader element sınıfını ve arka plan rengini güncelle
         const readerEl = document.getElementById('view-reader');
         readerEl.className = 'reader-view';
         readerEl.classList.add(`theme-${themeName}`);
+        readerEl.style.backgroundColor = colors.bg;
+        readerEl.style.color = colors.fg;
 
         if (this.currentBookType === 'epub') {
             this.applyEpubStyles();
