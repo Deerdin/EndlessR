@@ -55,57 +55,65 @@ const translateService = {
             console.warn("Speech Synthesis tarayıcınız tarafından desteklenmiyor.");
             return;
         }
-        
+        if (!text || !text.trim()) return;
+
         try {
             window.speechSynthesis.cancel();
         } catch (e) {
             console.warn("SpeechSynthesis cancel failed:", e);
         }
 
-        try {
-            const utterance = new SpeechSynthesisUtterance(text);
-            
-            // Try to use the selected voice from reader settings if available
-            const voiceSelect = document.getElementById('tts-voice-select');
-            let voiceSet = false;
-            const voices = window.speechSynthesis.getVoices();
-
-            if (voiceSelect && voiceSelect.value !== 'default') {
-                const selectedVoiceName = voiceSelect.value;
-                const matchedVoice = voices.find(v => v.name === selectedVoiceName);
-                if (matchedVoice) {
-                    utterance.voice = matchedVoice;
-                    utterance.lang = matchedVoice.lang;
-                    voiceSet = true;
+        setTimeout(() => {
+            try {
+                if (window.speechSynthesis.paused) {
+                    window.speechSynthesis.resume();
                 }
-            }
 
-            if (!voiceSet) {
-                let targetLang = "";
-                if (lang) {
-                    targetLang = lang.split('-')[0].toLowerCase();
-                    utterance.lang = lang;
-                } else {
-                    const hasTurkishChars = /[çğıöşüÇĞİÖŞÜ]/.test(text);
-                    targetLang = hasTurkishChars ? 'tr' : 'en';
-                    utterance.lang = hasTurkishChars ? 'tr-TR' : 'en-US';
-                }
+                const utterance = new SpeechSynthesisUtterance(text.trim());
                 
-                const matchingVoice = voices.find(v => {
-                    const l = v.lang.toLowerCase();
-                    return l.startsWith(targetLang);
-                });
-                if (matchingVoice) {
-                    utterance.voice = matchingVoice;
-                }
-            }
+                // Try to use the selected voice from reader settings if available
+                const voiceSelect = document.getElementById('tts-voice-select');
+                let voiceSet = false;
+                const voices = window.speechSynthesis.getVoices();
 
-            // Hız ayarı (0.9 mobil okumalarda idealdir)
-            utterance.rate = 0.95;
-            
-            window.speechSynthesis.speak(utterance);
-        } catch (speechErr) {
-            console.error("Failed to speak translation popover:", speechErr);
-        }
+                if (voiceSelect && voiceSelect.value !== 'default') {
+                    const selectedVoiceName = voiceSelect.value;
+                    const matchedVoice = voices.find(v => v.name === selectedVoiceName);
+                    if (matchedVoice) {
+                        utterance.voice = matchedVoice;
+                        utterance.lang = matchedVoice.lang;
+                        voiceSet = true;
+                    }
+                }
+
+                if (!voiceSet) {
+                    let targetLang = "";
+                    if (lang) {
+                        targetLang = lang.split('-')[0].toLowerCase();
+                        utterance.lang = lang;
+                    } else {
+                        const hasTurkishChars = /[çğıöşüÇĞİÖŞÜ]/.test(text);
+                        targetLang = hasTurkishChars ? 'tr' : 'en';
+                        utterance.lang = hasTurkishChars ? 'tr-TR' : 'en-US';
+                    }
+                    
+                    const matchingVoice = voices.find(v => {
+                        const l = v.lang.toLowerCase();
+                        return l.startsWith(targetLang);
+                    });
+                    if (matchingVoice) {
+                        utterance.voice = matchingVoice;
+                    }
+                }
+
+                const speedSelect = document.getElementById('tts-speed-select');
+                const speed = speedSelect ? parseFloat(speedSelect.value) : 0.95;
+                utterance.rate = speed || 0.95;
+                
+                window.speechSynthesis.speak(utterance);
+            } catch (speechErr) {
+                console.error("Failed to speak translation popover:", speechErr);
+            }
+        }, 50);
     }
 };

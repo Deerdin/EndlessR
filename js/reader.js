@@ -25,37 +25,87 @@ const reader = {
     
     epubScrollTimeout: null,
 
+    // TTS Kuyruk Durumu
+    isSpeakingTTS: false,
+    ttsChunks: [],
+    ttsCurrentIndex: 0,
+    ttsTimeout: null,
+
+    // EPUB İlerleme Hesaplama ve Arayüz Senkronizasyonu (Tek Merkezli)
+    async updateEpubProgressUI(saveToDb = true) {
+        if (this.currentBookType !== 'epub' || !this.epubRendition || !this.epubBook) return;
+
+        try {
+            const location = this.epubRendition.currentLocation();
+            if (!location || !location.start) return;
+
+            if (location.start.cfi) {
+                this.epubLocation = location.start.cfi;
+            }
+
+            const currentSpineIndex = typeof location.start.index === 'number' ? location.start.index : 0;
+            const totalSpineItems = (this.epubBook.spine && this.epubBook.spine.length) ? this.epubBook.spine.length : 1;
+
+            const hasToc = this.numberedChapters && this.numberedChapters.length > 0;
+            let currentStep = currentSpineIndex + 1;
+            let totalSteps = totalSpineItems;
+            let chapterTitle = "";
+
+            if (hasToc) {
+                const activeIndex = this.findActiveTocIndex(location);
+                totalSteps = this.numberedChapters.length;
+                if (activeIndex !== -1) {
+                    currentStep = activeIndex + 1;
+                    chapterTitle = this.numberedChapters[activeIndex].label || "";
+                } else {
+                    // Fallback: Spine oranına göre yaklaşık bölüm
+                    currentStep = Math.min(totalSteps, Math.max(1, Math.round(((currentSpineIndex + 1) / totalSpineItems) * totalSteps)));
+                    chapterTitle = this.numberedChapters[currentStep - 1] ? this.numberedChapters[currentStep - 1].label : "";
+                }
+            }
+
+            const progressPercent = Math.min(100, Math.max(0, Math.round((currentStep / totalSteps) * 100)));
+
+            const progressSlider = document.getElementById('reader-progress-slider');
+            if (progressSlider) {
+                progressSlider.min = 1;
+                progressSlider.max = totalSteps;
+                progressSlider.step = 1;
+                progressSlider.value = currentStep;
+            }
+
+            const labelText = chapterTitle
+                ? `Bölüm ${currentStep}: ${chapterTitle} (${currentStep} / ${totalSteps})`
+                : `Bölüm ${currentStep} / ${totalSteps}`;
+
+            this.updateProgressBar(currentStep, progressPercent, labelText);
+
+            const chIndicator = document.getElementById('panel-chapter-indicator');
+            if (chIndicator) {
+                chIndicator.textContent = `Bölüm ${currentStep} / ${totalSteps} (${progressPercent}%)`;
+            }
+
+            if (this.bookData) {
+                this.bookData.progressPercent = progressPercent;
+                this.bookData.lastLocation = this.epubLocation;
+            }
+
+            if (saveToDb && this.currentBookId && this.epubLocation) {
+                await booksDb.updateProgress(this.currentBookId, progressPercent, this.epubLocation);
+            }
+        } catch (e) {
+            console.warn("EPUB ilerleme güncelleme hatası:", e);
+        }
+    },
+
     // EPUB Dikey Kaydırma Konumunu Kaydetme Yardımcısı
     saveEpubScrollLocation() {
         if (this.currentBookType !== 'epub' || !this.epubRendition) return;
         
         if (this.epubScrollTimeout) clearTimeout(this.epubScrollTimeout);
         this.epubScrollTimeout = setTimeout(async () => {
-            try {
-                const location = this.epubRendition.currentLocation();
-                if (location && location.start && location.start.cfi) {
-                    this.epubLocation = location.start.cfi;
-                    
-                    const currentSpineIndex = location.start.index;
-                    const totalSpineItems = this.epubBook.spine.length;
-                    const progressPercent = Math.round(((currentSpineIndex + 1) / totalSpineItems) * 100);
-                    
-                    // İlerlemeyi DB'ye yaz (otomatik yedeklemeyi de tetikler)
-                    await booksDb.updateProgress(this.currentBookId, progressPercent, this.epubLocation);
-                    
-                    // UI'ı güncelle
-                    const chIndicator = document.getElementById('panel-chapter-indicator');
-                    if (chIndicator) {
-                        chIndicator.textContent = `Ch. ${currentSpineIndex + 1} / ${totalSpineItems} (${progressPercent}%)`;
-                    }
-                    
-                    // Slider'ı senkronize et
-                    this.syncSliderToCurrentLocation();
-                }
-            } catch (e) {
-                console.warn("EPUB scroll konumu kaydetme hatası:", e);
-            }
-        }, 800);
+            await this.updateEpubProgressUI(true);
+        }, 600);
     },
 
     savePdfScrollLocation() {
@@ -69,12 +119,15 @@ const reader = {
                 const lastLocationString = `${pageNum};${scrollTop}`;
                 
                 const percent = Math.round((pageNum / this.pdfTotalPages) * 100);
-                // DB'ye kaydet (otomatik yedeklemeyi de tetikler)
+                if (this.bookData) {
+                    this.bookData.progressPercent = percent;
+                    this.bookData.lastLocation = lastLocationString;
+                }
                 await booksDb.updateProgress(this.currentBookId, percent, lastLocationString);
             } catch (e) {
                 console.warn("PDF scroll kaydetme hatası:", e);
             }
-        }, 800);
+        }, 600);
     },
 
     // Okuyucu Stil Ayarları (IndexedDB'den veya varsayılan)
@@ -83,6 +136,7 @@ const reader = {
         fontFamily: "system-ui",
         lineHeight: 1.6,
         theme: "dark",
+        colorMode: "dark",
         tapToTranslate: false,
         padding: 8,
         readerType: "single",
@@ -96,7 +150,7 @@ const reader = {
             const book = await booksDb.getBook(bookId);
             if (!book) throw new Error("Kitap veritabanında bulunamadı.");
 
-            // Eğer kitap dosyası yoksa (favori olmayan, buluttan eksik geri yüklenen kitap)
+            // Eğer kitap dosyası yoksa
             if (!book.file) {
                 alert("Kitap dosyası bulunamadı.");
                 return;
@@ -142,15 +196,12 @@ const reader = {
             this.lastSpineIndex = null;
             this.lastPdfPage = null;
 
-            // Ayarları yükle
+            // Ayarları yükle (Ana sayfa temasından bağımsız kitap içi tema ayarları)
             this.settings.fontSize = await settingsDb.get('readerFontSize', 100);
             this.settings.fontFamily = await settingsDb.get('readerFontFamily', 'system-ui');
             this.settings.lineHeight = await settingsDb.get('readerLineHeight', 1.6);
-            
-            const currentAppTheme = await settingsDb.get('appTheme', 'dark');
-            const defaultTheme = currentAppTheme === 'dark' ? 'dark' : 'light';
-            this.settings.theme = defaultTheme;
-            await settingsDb.set('readerTheme', defaultTheme);
+            this.settings.colorMode = await settingsDb.get('readerColorMode', 'dark');
+            this.settings.theme = await settingsDb.get('readerTheme', this.settings.colorMode === 'dark' ? 'dark' : 'light');
             
             this.settings.tapToTranslate = await settingsDb.get('readerTapToTranslate', false);
             this.settings.padding = await settingsDb.get('readerPadding', 8);
@@ -171,14 +222,19 @@ const reader = {
             document.getElementById('font-size-val').textContent = this.settings.fontSize + '%';
             document.getElementById('lineheight-val').textContent = this.settings.lineHeight;
             document.getElementById('padding-val').textContent = this.settings.padding + 'px';
+
+            // Yazı tipi butonlarının aktiflik durumunu senkronize et
+            document.querySelectorAll('.font-family-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-font') === this.settings.fontFamily);
+            });
             
             // WTR Settings Tabındaki Butonları ve Elemanları Güncelle
             document.querySelectorAll('#tab-pane-settings .wtr-tab-btn[id^="btn-readertype-"]').forEach(btn => btn.classList.remove('active'));
             const typeBtn = document.getElementById(`btn-readertype-${this.settings.readerType}`);
             if (typeBtn) typeBtn.classList.add('active');
 
-            document.getElementById('btn-webtheme-light').classList.toggle('active', currentAppTheme === 'light');
-            document.getElementById('btn-webtheme-dark').classList.toggle('active', currentAppTheme === 'dark');
+            document.getElementById('btn-webtheme-light').classList.toggle('active', this.settings.colorMode === 'light');
+            document.getElementById('btn-webtheme-dark').classList.toggle('active', this.settings.colorMode === 'dark');
 
             document.querySelectorAll('#tab-pane-settings .wtr-tab-btn[id^="btn-trans-"]').forEach(btn => btn.classList.remove('active'));
             const transBtn = document.getElementById(`btn-trans-${this.settings.translationService}`);
@@ -190,8 +246,8 @@ const reader = {
                 autoUnlockToggle.checked = this.settings.autoUnlock;
             }
 
-            // WTR Reader Theme butonlarını dinamik olarak güncelle
-            this.updateReaderThemeUI(currentAppTheme);
+            // WTR Reader Theme butonlarını kitap içi renk moduna göre dinamik olarak güncelle
+            this.updateReaderThemeUI(this.settings.colorMode);
             
             // Okuyucu alanlarını sıfırla
             document.getElementById('epub-viewer').style.display = 'none';
@@ -208,7 +264,7 @@ const reader = {
             }
 
             // Temayı uygula
-            this.setReaderTheme(this.settings.theme);
+            await this.setReaderTheme(this.settings.theme);
 
             // Son okuma zamanını güncelle
             book.lastReadAt = Date.now();
@@ -283,10 +339,8 @@ const reader = {
             allowScriptedContent: true
         });
 
-        // Kitabı en sonda render edeceğiz (Kancalar ve olay dinleyicileri kaydolduktan sonra)
-
         // İçindekiler listesini yükle
-        this.loadEpubToc();
+        await this.loadEpubToc();
 
         // Stil ayarlarını uygula
         this.applyEpubStyles();
@@ -300,10 +354,10 @@ const reader = {
                         const response = await fetch(coverPath);
                         const blob = await response.blob();
                         const base64Url = await new Promise((res, rej) => {
-                            const reader = new FileReader();
-                            reader.onloadend = () => res(reader.result);
-                            reader.onerror = rej;
-                            reader.readAsDataURL(blob);
+                            const fileReader = new FileReader();
+                            fileReader.onloadend = () => res(fileReader.result);
+                            fileReader.onerror = rej;
+                            fileReader.readAsDataURL(blob);
                         });
                         this.bookData.coverUrl = base64Url;
                         await booksDb.saveBook(this.bookData);
@@ -322,25 +376,16 @@ const reader = {
 
         // Sayfa geçiş dinleyicisi (Progress Kaydetme)
         this.epubRendition.on("relocated", (location) => {
-            this.epubLocation = location.start.cfi;
-            
-            const currentSpineIndex = location.start.index;
-            const totalSpineItems = this.epubBook.spine.length;
-            const progressPercent = Math.round(((currentSpineIndex + 1) / totalSpineItems) * 100);
-            
-            this.syncSliderToCurrentLocation();
-            
-            const chIndicator = document.getElementById('panel-chapter-indicator');
-            if (chIndicator) {
-                chIndicator.textContent = `Ch. ${currentSpineIndex + 1} / ${totalSpineItems} (${progressPercent}%)`;
+            if (location && location.start && location.start.cfi) {
+                this.epubLocation = location.start.cfi;
             }
-            
-            // İlerlemeyi DB'ye yaz
-            booksDb.updateProgress(this.currentBookId, progressPercent, this.epubLocation);
+            const currentSpineIndex = (location && location.start) ? location.start.index : 0;
+
+            this.updateEpubProgressUI(true);
             
             // Bölüm geçişinde geçmişe kaydet (NavHistory)
             if (typeof navHistory !== 'undefined' && !navHistory.isNavigatingBack) {
-                if (this.lastSpineIndex !== currentSpineIndex) {
+                if (this.lastSpineIndex !== currentSpineIndex && location && location.start) {
                     navHistory.push({ type: 'chapter', value: location.start.cfi });
                 }
             }
@@ -353,16 +398,7 @@ const reader = {
 
         // EPUB Lokasyonları Hazır Olduğunda
         this.epubBook.ready.then(() => {
-            const currentSpineIndex = this.epubRendition.currentLocation() ? this.epubRendition.currentLocation().start.index : 0;
-            const totalSpineItems = this.epubBook.spine.length;
-            const progressPercent = Math.round(((currentSpineIndex + 1) / totalSpineItems) * 100);
-            
-            this.syncSliderToCurrentLocation();
-            
-            const chIndicator = document.getElementById('panel-chapter-indicator');
-            if (chIndicator) {
-                chIndicator.textContent = `Ch. ${currentSpineIndex + 1} / ${totalSpineItems} (${progressPercent}%)`;
-            }
+            this.updateEpubProgressUI(false);
         });
 
         // EPUB İçi Metin Seçim Dinleyicisi (Çeviri Popover Tetikleyici)
@@ -593,11 +629,12 @@ const reader = {
             // Iframe içi mousedown ile popover kapatma ve seçimi kaldırma
             contents.document.body.addEventListener('mousedown', (e) => {
                 setTimeout(() => {
+                    if (this.isProcessingSelection) return;
                     const sel = contents.window.getSelection();
                     if (!sel || sel.toString().trim().length === 0) {
                         this.hidePopover();
                     }
-                }, 50);
+                }, 80);
             });
 
             // Tek Tıklama ile Seçenekler Panelini Açma/Kapatma
@@ -610,6 +647,18 @@ const reader = {
                 // Seçili metin varsa menüyü tetikleme
                 const sel = contents.window.getSelection();
                 if (sel && sel.toString().trim().length > 0) {
+                    return;
+                }
+
+                // Çeviri popover'ı veya İçindekiler (TOC) paneli açıksa önce onları kapat
+                const popover = document.getElementById('translate-popover');
+                if (popover && popover.style.display === 'flex') {
+                    this.hidePopover();
+                    return;
+                }
+                const tocPanel = document.getElementById('toc-panel');
+                if (tocPanel && tocPanel.classList.contains('open')) {
+                    this.closeTOCPanel();
                     return;
                 }
 
@@ -686,10 +735,11 @@ const reader = {
                     progressSlider.min = 1;
                     progressSlider.max = this.numberedChapters.length;
                     progressSlider.step = 1;
-                    this.syncSliderToCurrentLocation();
                 }
+                this.updateEpubProgressUI(false);
             } else {
                 tocList.innerHTML = '<p class="empty-text">Bu kitapta içindekiler tablosu bulunamadı.</p>';
+                this.updateEpubProgressUI(false);
             }
         } catch (e) {
             console.error("İçindekiler yüklenemedi:", e);
@@ -749,7 +799,7 @@ const reader = {
 
         this.epubRendition.themes.select(this.settings.theme);
 
-        // Iframe'lerdeki custom style elementlerini güncelle (Kenar boşlukları ve renkleri ezmek için)
+        // Iframe'lerdeki custom style elementlerini güncelle (Kenar boşlukları, yazı tipleri ve renkleri ezmek için)
         try {
             const iframes = document.querySelectorAll("#epub-viewer iframe");
             iframes.forEach(iframe => {
@@ -792,6 +842,7 @@ const reader = {
         if (progressSlider) {
             progressSlider.min = 1;
             progressSlider.max = this.pdfTotalPages;
+            progressSlider.step = 1;
             progressSlider.value = this.pdfCurrentPage;
         }
 
@@ -799,7 +850,11 @@ const reader = {
 
         // İlerlemeyi güncelle
         const percent = Math.round((this.pdfCurrentPage / this.pdfTotalPages) * 100);
-        this.updateProgressBar(percent, `Sayfa ${this.pdfCurrentPage} / ${this.pdfTotalPages}`);
+        this.updateProgressBar(this.pdfCurrentPage, percent, `Sayfa ${this.pdfCurrentPage} / ${this.pdfTotalPages}`);
+        const chIndicator = document.getElementById('panel-chapter-indicator');
+        if (chIndicator) {
+            chIndicator.textContent = `Sayfa ${this.pdfCurrentPage} / ${this.pdfTotalPages} (${percent}%)`;
+        }
 
         // PDF İçindekiler Yükleme
         this.loadPdfToc();
@@ -906,6 +961,14 @@ const reader = {
             // İlerlemeyi güncelle
             const percent = Math.round((this.pdfCurrentPage / this.pdfTotalPages) * 100);
             this.updateProgressBar(this.pdfCurrentPage, percent, `Sayfa ${this.pdfCurrentPage} / ${this.pdfTotalPages}`);
+            const chIndicator = document.getElementById('panel-chapter-indicator');
+            if (chIndicator) {
+                chIndicator.textContent = `Sayfa ${this.pdfCurrentPage} / ${this.pdfTotalPages} (${percent}%)`;
+            }
+            if (this.bookData) {
+                this.bookData.progressPercent = percent;
+                this.bookData.lastLocation = `${this.pdfCurrentPage};0`;
+            }
             
             // DB'ye kaydet (Yeni sayfaya geçildiğinde kaydırma 0'dan başlar)
             booksDb.updateProgress(this.currentBookId, percent, `${this.pdfCurrentPage};0`);
@@ -999,19 +1062,14 @@ const reader = {
         }
     },
 
-    // Slider Konumunu Güncelleme
-    syncSliderToCurrentLocation() {
-        if (!this.numberedChapters || this.numberedChapters.length === 0 || !this.epubRendition) return;
+    // Mevcut Konuma Göre Aktif TOC Bölüm İndeksini Bulma
+    findActiveTocIndex(currentLocation) {
+        if (!this.numberedChapters || this.numberedChapters.length === 0 || !currentLocation || !currentLocation.start) {
+            return -1;
+        }
 
-        const currentLocation = this.epubRendition.currentLocation();
-        if (!currentLocation || !currentLocation.start) return;
-
-        const currentCfi = currentLocation.start.cfi;
         const currentSpineIndex = currentLocation.start.index;
-
         let activeIndex = -1;
-
-        // Spine index araması
         let candidateIdx = -1;
         let highestSpine = -1;
         
@@ -1028,7 +1086,6 @@ const reader = {
         
         if (candidateIdx !== -1) {
             activeIndex = candidateIdx;
-            
             const candidateSpine = highestSpine;
             let sameSpineChapters = [];
             for (let i = 0; i < this.numberedChapters.length; i++) {
@@ -1039,12 +1096,12 @@ const reader = {
             }
             
             if (sameSpineChapters.length > 1) {
-                const currentHref = currentLocation.start.href;
+                const currentHref = currentLocation.start.href || '';
                 const currentHash = currentHref.includes('#') ? currentHref.split('#')[1] : null;
                 
                 if (currentHash) {
                     const match = sameSpineChapters.find(c => {
-                        const h = c.chapter.href;
+                        const h = c.chapter.href || '';
                         const hash = h.includes('#') ? h.split('#')[1] : null;
                         return hash === currentHash;
                     });
@@ -1073,24 +1130,24 @@ const reader = {
             }
         }
 
-        if (activeIndex !== -1) {
-            const sliderValue = activeIndex + 1;
-            const percent = Math.round((sliderValue / this.numberedChapters.length) * 100);
-            const chapterLabel = this.numberedChapters[activeIndex].label;
-            const progressText = `Bölüm ${sliderValue}: ${chapterLabel} (${sliderValue} / ${this.numberedChapters.length})`;
-            
-            this.updateProgressBar(sliderValue, percent, progressText);
-        }
+        return activeIndex;
+    },
+
+    // Slider Konumunu Güncelleme
+    syncSliderToCurrentLocation() {
+        this.updateEpubProgressUI(false);
     },
 
     // Slayt İlerleme Çubuğunu Güncelleme
     updateProgressBar(sliderValue, percent, text) {
         const slider = document.getElementById('reader-progress-slider');
-        if (slider) {
+        if (slider && sliderValue !== undefined) {
             slider.value = sliderValue;
         }
-        document.getElementById('reader-progress-percent').textContent = percent + '%';
-        document.getElementById('reader-progress-label').textContent = text;
+        const percentEl = document.getElementById('reader-progress-percent');
+        if (percentEl) percentEl.textContent = (percent !== undefined ? percent : 0) + '%';
+        const labelEl = document.getElementById('reader-progress-label');
+        if (labelEl && text !== undefined) labelEl.textContent = text;
     },
 
     // 5. Metin Seçiminden Cümleyi Ayıklama (Bağlamsal Çeviri İçin)
@@ -1263,9 +1320,17 @@ const reader = {
     },
 
     openStylePanel() {
-        // Her ilk açılışta sekmeleri pasifleştirerek sadece alt barın görünmesini sağla
-        document.querySelectorAll('.panel-tab-btn').forEach(btn => btn.classList.remove('active'));
-        document.querySelectorAll('.reader-options-panel .tab-pane').forEach(pane => pane.classList.remove('active'));
+        // Hiçbir sekme aktif değilse varsayılan olarak Bölüm (tab-pane-read) sekmesini aktif et
+        const activeTabBtn = document.querySelector('.panel-tab-btn.active');
+        const activeTabPane = document.querySelector('.reader-options-panel .tab-pane.active');
+        if (!activeTabBtn || !activeTabPane) {
+            document.querySelectorAll('.panel-tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.reader-options-panel .tab-pane').forEach(pane => pane.classList.remove('active'));
+            const defaultBtn = document.querySelector('.panel-tab-btn[data-tab="tab-pane-read"]');
+            const defaultPane = document.getElementById('tab-pane-read');
+            if (defaultBtn) defaultBtn.classList.add('active');
+            if (defaultPane) defaultPane.classList.add('active');
+        }
         
         document.getElementById('reader-options-panel').classList.add('open');
         const header = document.querySelector('.reader-header');
@@ -1698,12 +1763,24 @@ const reader = {
         return themes[themeName] || themes["dark"];
     },
 
-    // Özel stilleri dökümana (iframe içine) uygulama ve EPUB renklerini zorla ezme metodu
+    // Özel stilleri dökümana (iframe içine) uygulama ve EPUB renklerini/yazı tiplerini zorla ezme metodu
     applyCustomStylesToDoc(doc) {
-        if (!doc) return;
+        if (!doc || !doc.head) return;
         const rType = this.settings.readerType || "single";
         const padVal = this.settings.padding !== undefined ? this.settings.padding : 8;
         const colors = this.getThemeColors(this.settings.theme);
+        const font = this.settings.fontFamily || "system-ui";
+        const fontSize = this.settings.fontSize || 100;
+        const lh = this.settings.lineHeight || 1.6;
+
+        // Google Fonts (Inter, Lora, Outfit) bağlantısını EPUB iframe'ine enjekte et
+        if (!doc.getElementById('antigravity-google-fonts')) {
+            const fontLink = doc.createElement('link');
+            fontLink.id = 'antigravity-google-fonts';
+            fontLink.rel = 'stylesheet';
+            fontLink.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@400;500;600;700;800&display=swap';
+            doc.head.appendChild(fontLink);
+        }
         
         let customStyle = doc.getElementById('antigravity-custom-styles');
         if (!customStyle) {
@@ -1723,6 +1800,9 @@ const reader = {
                     box-sizing: border-box !important;
                     background-color: ${colors.bg} !important;
                     color: ${colors.fg} !important;
+                    font-family: ${font} !important;
+                    font-size: ${fontSize}% !important;
+                    line-height: ${lh} !important;
                     overflow-x: hidden !important;
                 }
                 /* Custom elegant scrollbar inside book iframe */
@@ -1740,12 +1820,14 @@ const reader = {
                 ::-webkit-scrollbar-thumb:hover {
                     background: rgba(128, 128, 128, 0.45) !important;
                 }
-                /* Genişlik ve kitap içi renk kısıtlamalarını ezelim */
-                p, div, section, article, span, h1, h2, h3, h4, h5, h6 {
+                /* Genişlik, yazı tipi ve kitap içi renk kısıtlamalarını ezelim */
+                p, div, section, article, span, li, blockquote, a, h1, h2, h3, h4, h5, h6 {
                     max-width: 100% !important;
                     width: auto !important;
                     background-color: transparent !important;
                     color: inherit !important;
+                    font-family: ${font} !important;
+                    line-height: ${lh} !important;
                 }
             `;
         } else {
@@ -1755,6 +1837,9 @@ const reader = {
                     box-sizing: border-box !important;
                     background-color: ${colors.bg} !important;
                     color: ${colors.fg} !important;
+                    font-family: ${font} !important;
+                    font-size: ${fontSize}% !important;
+                    line-height: ${lh} !important;
                     overflow-x: hidden !important;
                 }
                 /* Custom elegant scrollbar inside book iframe */
@@ -1772,13 +1857,32 @@ const reader = {
                 ::-webkit-scrollbar-thumb:hover {
                     background: rgba(128, 128, 128, 0.45) !important;
                 }
-                p, div, section, article, span, h1, h2, h3, h4, h5, h6 {
+                p, div, section, article, span, li, blockquote, a, h1, h2, h3, h4, h5, h6 {
                     background-color: transparent !important;
                     color: inherit !important;
+                    font-family: ${font} !important;
+                    line-height: ${lh} !important;
                 }
             `;
         }
         customStyle.textContent = css;
+    },
+
+    // Kitap İçi Renk Paleti Modu Seçme (Light / Dark - Ana sayfa temasından bağımsız)
+    async setReaderColorMode(mode) {
+        this.settings.colorMode = mode === 'light' ? 'light' : 'dark';
+        await settingsDb.set('readerColorMode', this.settings.colorMode);
+
+        const btnLight = document.getElementById('btn-webtheme-light');
+        const btnDark = document.getElementById('btn-webtheme-dark');
+        if (btnLight && btnDark) {
+            btnLight.classList.toggle('active', this.settings.colorMode === 'light');
+            btnDark.classList.toggle('active', this.settings.colorMode === 'dark');
+        }
+
+        const defaultReaderTheme = this.settings.colorMode === 'dark' ? 'dark' : 'light';
+        await this.setReaderTheme(defaultReaderTheme);
+        this.updateReaderThemeUI(this.settings.colorMode);
     },
 
     // Okuyucu Teması Seçme
@@ -1814,13 +1918,13 @@ const reader = {
         });
     },
 
-    // WTR Reader Theme butonlarını uygulama temasına göre dinamik güncelle
-    updateReaderThemeUI(webTheme) {
+    // WTR Reader Theme butonlarını kitap içi renk moduna göre dinamik güncelle
+    updateReaderThemeUI(colorMode) {
         const grid = document.querySelector('.wtr-theme-grid');
         if (!grid) return;
         
         let html = '';
-        if (webTheme === 'dark') {
+        if (colorMode === 'dark') {
             html = `
                 <button class="wtr-theme-btn" data-theme="dark" style="background-color: #1e222b; color: #a0aab8; border-color: rgba(255,255,255,0.15);">"Aa"</button>
                 <button class="wtr-theme-btn" data-theme="night" style="background-color: #0f1115; color: #ffffff; border-color: rgba(255,255,255,0.15);">"Aa"</button>
@@ -1877,6 +1981,135 @@ const reader = {
         range.setEnd(range.startContainer, end);
     },
 
+    // Metni TTS için uygun uzunlukta cümle parçalarına bölme yardımcısı
+    splitTextIntoTTSChunks(text, maxLen = 220) {
+        if (!text) return [];
+        const rawSentences = text.match(/[^.!?;\n]+[.!?;\n]*/g) || [text];
+        const chunks = [];
+        let current = "";
+
+        for (let s of rawSentences) {
+            s = s.trim();
+            if (!s) continue;
+            if ((current + " " + s).trim().length <= maxLen) {
+                current = (current + " " + s).trim();
+            } else {
+                if (current) chunks.push(current);
+                if (s.length <= maxLen) {
+                    current = s;
+                } else {
+                    const words = s.split(/\s+/);
+                    current = "";
+                    for (const w of words) {
+                        if ((current + " " + w).trim().length <= maxLen) {
+                            current = (current + " " + w).trim();
+                        } else {
+                            if (current) chunks.push(current);
+                            current = w;
+                        }
+                    }
+                }
+            }
+        }
+        if (current) chunks.push(current);
+        return chunks;
+    },
+
+    // Sıradaki TTS cümle parçasını seslendir
+    speakCurrentChunk() {
+        if (!this.isSpeakingTTS) return;
+        if (!this.ttsChunks || this.ttsCurrentIndex >= this.ttsChunks.length) {
+            this.stopTTS();
+            return;
+        }
+
+        const chunkText = this.ttsChunks[this.ttsCurrentIndex];
+        if (!chunkText || !chunkText.trim()) {
+            this.ttsCurrentIndex++;
+            this.speakCurrentChunk();
+            return;
+        }
+
+        try {
+            if (window.speechSynthesis.paused) {
+                window.speechSynthesis.resume();
+            }
+
+            const speedSelect = document.getElementById('tts-speed-select');
+            const speed = speedSelect ? parseFloat(speedSelect.value) : 1.0;
+
+            const utterance = new SpeechSynthesisUtterance(chunkText);
+            utterance.rate = speed || 1.0;
+
+            const voiceSelect = document.getElementById('tts-voice-select');
+            let voiceSet = false;
+            const voices = window.speechSynthesis.getVoices();
+
+            if (voiceSelect && voiceSelect.value !== 'default') {
+                const selectedVoiceName = voiceSelect.value;
+                const matchedVoice = voices.find(v => v.name === selectedVoiceName);
+                if (matchedVoice) {
+                    utterance.voice = matchedVoice;
+                    utterance.lang = matchedVoice.lang;
+                    voiceSet = true;
+                }
+            }
+
+            if (!voiceSet) {
+                const hasTurkishChars = /[çğıöşüÇĞİÖŞÜ]/.test(chunkText);
+                const targetLang = hasTurkishChars ? 'tr' : 'en';
+                utterance.lang = hasTurkishChars ? 'tr-TR' : 'en-US';
+
+                const matchingVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith(targetLang));
+                if (matchingVoice) {
+                    utterance.voice = matchingVoice;
+                }
+            }
+
+            utterance.onend = () => {
+                if (!this.isSpeakingTTS) return;
+                this.ttsCurrentIndex++;
+                if (this.ttsCurrentIndex < this.ttsChunks.length) {
+                    this.speakCurrentChunk();
+                } else {
+                    this.stopTTS();
+                }
+            };
+
+            utterance.onerror = (err) => {
+                if (err && (err.error === 'interrupted' || err.error === 'canceled')) {
+                    return;
+                }
+                console.warn("TTS parça okuma hatası:", err);
+                if (!this.isSpeakingTTS) return;
+                this.ttsCurrentIndex++;
+                if (this.ttsCurrentIndex < this.ttsChunks.length) {
+                    this.speakCurrentChunk();
+                } else {
+                    this.stopTTS();
+                }
+            };
+
+            window.speechSynthesis.speak(utterance);
+        } catch (err) {
+            console.error("TTS speakCurrentChunk hatası:", err);
+            this.stopTTS();
+        }
+    },
+
+    restartTTSFromCurrentChunk() {
+        if (!this.isSpeakingTTS || !this.ttsChunks || this.ttsChunks.length === 0) return;
+        if (this.ttsTimeout) clearTimeout(this.ttsTimeout);
+        try {
+            window.speechSynthesis.cancel();
+        } catch (e) {}
+        this.ttsTimeout = setTimeout(() => {
+            if (this.isSpeakingTTS) {
+                this.speakCurrentChunk();
+            }
+        }, 60);
+    },
+
     // Sesli Kitap Okuma Başlat (TTS)
     async startTTS() {
         if (!('speechSynthesis' in window)) {
@@ -1887,13 +2120,14 @@ const reader = {
         let textToRead = "";
         
         if (this.currentBookType === 'epub' && this.epubRendition) {
-            // Priority: Read directly from active iframes inside #epub-viewer to guarantee we read what the user sees on screen
             const iframes = document.querySelectorAll("#epub-viewer iframe");
             let frameTexts = [];
             iframes.forEach(iframe => {
                 try {
-                    if (iframe && iframe.contentDocument) {
-                        frameTexts.push(iframe.contentDocument.body.innerText);
+                    if (iframe && iframe.contentDocument && iframe.contentDocument.body) {
+                        const clone = iframe.contentDocument.body.cloneNode(true);
+                        clone.querySelectorAll('.epub-chapter-footer, script, style, noscript').forEach(el => el.remove());
+                        frameTexts.push(clone.innerText || clone.textContent || "");
                     }
                 } catch (err) {}
             });
@@ -1902,25 +2136,27 @@ const reader = {
                 textToRead = frameTexts.join('\n');
             }
             
-            // Fallback to official getContents() if iframes were not found or empty
             if (!textToRead) {
                 try {
                     const contents = this.epubRendition.getContents();
                     if (contents && contents.length > 0) {
-                        textToRead = contents.map(c => c.document ? c.document.body.innerText : "").join('\n');
+                        textToRead = contents.map(c => {
+                            if (!c.document || !c.document.body) return "";
+                            const clone = c.document.body.cloneNode(true);
+                            clone.querySelectorAll('.epub-chapter-footer, script, style, noscript').forEach(el => el.remove());
+                            return clone.innerText || clone.textContent || "";
+                        }).join('\n');
                     }
                 } catch (e) {
                     console.warn("EpubJS getContents failed:", e);
                 }
             }
         } else if (this.currentBookType === 'pdf' && this.pdfDocument) {
-            // Priority: Read directly from the rendered textLayer in #pdf-viewer to ensure translated text is read
             const textSpans = document.querySelectorAll("#pdf-viewer .textLayer span");
             if (textSpans && textSpans.length > 0) {
                 textToRead = Array.from(textSpans).map(span => span.innerText || span.textContent).join(' ');
             }
             
-            // Fallback to extraction from PDF page object if DOM is empty
             if (!textToRead) {
                 try {
                     const page = await this.pdfDocument.getPage(this.pdfCurrentPage);
@@ -1932,83 +2168,45 @@ const reader = {
             }
         }
         
-        // Temizleme ve boşluk azaltma
         textToRead = textToRead.replace(/\s+/g, ' ').trim();
         
-        if (textToRead) {
-            try {
-                window.speechSynthesis.cancel(); // Mevcut sesleri kes
-            } catch (e) {
-                console.warn("SpeechSynthesis cancel failed:", e);
-            }
-            
-            // Speak synchronously to preserve the user gesture flow (fixes silent speech synthesis in WebView)
-            try {
-                const speedSelect = document.getElementById('tts-speed-select');
-                const speed = speedSelect ? parseFloat(speedSelect.value) : 1.0;
-                
-                const utterance = new SpeechSynthesisUtterance(textToRead);
-                utterance.rate = speed;
-                
-                // Voice selection logic (male, female, Google, etc.)
-                const voiceSelect = document.getElementById('tts-voice-select');
-                let voiceSet = false;
-                const voices = window.speechSynthesis.getVoices();
-
-                if (voiceSelect && voiceSelect.value !== 'default') {
-                    const selectedVoiceName = voiceSelect.value;
-                    const matchedVoice = voices.find(v => v.name === selectedVoiceName);
-                    if (matchedVoice) {
-                        utterance.voice = matchedVoice;
-                        utterance.lang = matchedVoice.lang;
-                        voiceSet = true;
-                    }
-                }
-                
-                if (!voiceSet) {
-                    // Türkçe karakter testi ile dili belirleme
-                    const hasTurkishChars = /[çğıöşüÇĞİÖŞÜ]/.test(textToRead.substring(0, Math.min(textToRead.length, 1000)));
-                    const targetLang = hasTurkishChars ? 'tr' : 'en';
-                    utterance.lang = hasTurkishChars ? 'tr-TR' : 'en-US';
-                    
-                    const matchingVoice = voices.find(v => {
-                        const l = v.lang.toLowerCase();
-                        return l.startsWith(targetLang);
-                    });
-                    if (matchingVoice) {
-                        utterance.voice = matchingVoice;
-                    }
-                }
-                
-                // Okuma bittiğinde buton durumunu sıfırla
-                utterance.onend = () => {
-                    this.stopTTS();
-                };
-                
-                utterance.onerror = (err) => {
-                    console.error("TTS Speech Utterance Error:", err);
-                    this.stopTTS();
-                };
-                
-                window.speechSynthesis.speak(utterance);
-            } catch (speechErr) {
-                console.error("Failed to call speechSynthesis.speak:", speechErr);
-                alert("Seslendirme başlatılamadı.");
-                this.stopTTS();
-            }
-            
-            // Oynat butonunu durdur ikonuna dönüştür
-            const btn = document.getElementById('btn-tts-toggle');
-            if (btn) {
-                btn.innerHTML = '<i data-lucide="pause"></i> Duraklat';
-                lucide.createIcons();
-            }
-        } else {
-            alert("Metin bulunamadı.");
+        if (!textToRead) {
+            alert("Okunacak metin bulunamadı.");
+            return;
         }
+
+        this.ttsChunks = this.splitTextIntoTTSChunks(textToRead, 220);
+        this.ttsCurrentIndex = 0;
+        this.isSpeakingTTS = true;
+
+        if (this.ttsTimeout) clearTimeout(this.ttsTimeout);
+        try {
+            window.speechSynthesis.cancel();
+        } catch (e) {
+            console.warn("SpeechSynthesis cancel failed:", e);
+        }
+
+        const btn = document.getElementById('btn-tts-toggle');
+        if (btn) {
+            btn.innerHTML = '<i data-lucide="pause"></i> Duraklat';
+            lucide.createIcons();
+        }
+
+        this.ttsTimeout = setTimeout(() => {
+            if (this.isSpeakingTTS) {
+                this.speakCurrentChunk();
+            }
+        }, 60);
     },
     
     stopTTS() {
+        this.isSpeakingTTS = false;
+        this.ttsChunks = [];
+        this.ttsCurrentIndex = 0;
+        if (this.ttsTimeout) {
+            clearTimeout(this.ttsTimeout);
+            this.ttsTimeout = null;
+        }
         if ('speechSynthesis' in window) {
             try {
                 window.speechSynthesis.cancel();
@@ -2292,6 +2490,11 @@ const reader = {
         this.closeStylePanel();
         this.closeTOCPanel();
         this.hidePopover();
+
+        // Kütüphanedeki kitap kartlarının ilerleme yüzdesini güncelle
+        if (window.app) {
+            window.app.loadLibrary();
+        }
 
         // Ekran butonuna basarak kapatıldıysa tarayıcı geçmişini temizle ve eşitle
         if (typeof navHistory !== 'undefined' && !navHistory.isNavigatingBack) {

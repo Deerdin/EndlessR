@@ -353,6 +353,11 @@ body {
     text-shadow: none !important;
 }
 
+body.theme-light .header-logo .logo-accent {
+    color: var(--text-primary) !important;
+    -webkit-text-fill-color: var(--text-primary) !important;
+}
+
 .view-title {
     font-family: var(--font-display);
     font-weight: 700;
@@ -1055,7 +1060,7 @@ body {
 }
 
 .pdf-indicator {
-    position: absolute;
+    position: fixed;
     bottom: 80px;
     left: 50%;
     transform: translateX(-50%);
@@ -1069,22 +1074,26 @@ body {
 
 /* Yan Panel (İçindekiler) */
 .side-panel {
-    position: absolute;
+    position: fixed;
     top: 0;
     bottom: 0;
     left: 0;
     width: 280px;
-    z-index: 40;
+    z-index: 50;
     display: flex;
     flex-direction: column;
     transform: translateX(-100%);
-    transition: transform var(--transition-normal);
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform var(--transition-normal), visibility var(--transition-normal);
     box-shadow: var(--shadow-lg);
     background-color: var(--bg-surface-solid);
 }
 
 .side-panel.open {
     transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
 }
 
 .panel-header {
@@ -1363,7 +1372,7 @@ body.theme-dark .translation-result, body.theme-night .translation-result {
 
 /* Birleşik Alt Kontrol Paneli (Bottom Drawer) */
 .reader-options-panel {
-    position: absolute;
+    position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
@@ -1372,14 +1381,18 @@ body.theme-dark .translation-result, body.theme-night .translation-result {
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     box-shadow: 0 -8px 40px rgba(0,0,0,0.3);
     transform: translateY(100%);
-    transition: transform var(--transition-slow) cubic-bezier(0.1, 0.76, 0.55, 0.94);
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform var(--transition-slow) cubic-bezier(0.1, 0.76, 0.55, 0.94), visibility var(--transition-slow);
     display: flex;
     flex-direction: column;
     padding-bottom: env(safe-area-inset-bottom);
-    max-height: 50vh;
+    max-height: 75vh;
 }
 .reader-options-panel.open {
     transform: translateY(0);
+    visibility: visible;
+    pointer-events: auto;
 }
 
 /* Sürükleme Çizgisi (Stemless Arrow) */
@@ -2021,6 +2034,12 @@ body.theme-light .wtr-tab-btn.active {
 body.theme-light .wtr-select {
     background: #ffffff;
 }
+.wtr-select option,
+.glass-select-sm option,
+.glass-select option {
+    background-color: var(--bg-surface-solid);
+    color: var(--text-primary);
+}
 .wtr-select-arrow {
     position: absolute;
     right: 12px;
@@ -2162,6 +2181,10 @@ body.reader-active, html.reader-active {
     height: auto !important;
 }
 
+body.reader-active .app-navbar {
+    display: none !important;
+}
+
 body.reader-active .reader-view {
     position: absolute !important;
     height: auto !important;
@@ -2184,7 +2207,11 @@ body.reader-active #epub-viewer, body.reader-active #pdf-viewer {
     overflow: visible !important;
 }
 
-body.reader-active .reader-header {
+body.reader-active .reader-header,
+body.reader-active .reader-options-panel,
+body.reader-active .side-panel,
+body.reader-active .pdf-indicator,
+body.reader-active .nav-arrow {
     position: fixed !important;
 }
 

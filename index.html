@@ -43,6 +43,10 @@
             <header class="view-header" style="padding-bottom: 20px;">
                 <div class="header-logo"><span class="logo-main">Endless</span><span class="logo-accent">R</span></div>
                 <div class="header-actions" style="display: flex; align-items: center; gap: 8px;">
+                    <!-- Ana Sayfa Tema Değiştirme Butonu (Ay / Güneş) -->
+                    <button id="btn-home-theme-toggle" class="icon-btn glass" style="width: 40px; height: 40px; border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); cursor: pointer;" title="Temayı Değiştir">
+                        <i data-lucide="sun" style="width: 18px; height: 18px;"></i>
+                    </button>
                     <!-- Kitap Silme Modu Butonu (Çöp Kutusu) -->
                     <button id="btn-home-delete-mode" class="icon-btn glass" style="width: 40px; height: 40px; border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); cursor: pointer;" title="Kitap Kaldır">
                         <i data-lucide="trash-2" style="width: 18px; height: 18px;"></i>
@@ -469,9 +473,9 @@
                             </div>
                         </div>
 
-                        <!-- WEBSITE THEME -->
+                        <!-- READER PALETTE -->
                         <div class="settings-section">
-                            <span class="settings-section-label">WEBSITE THEME</span>
+                            <span class="settings-section-label">READER PALETTE</span>
                             <div class="wtr-btn-group">
                                 <button id="btn-webtheme-light" class="wtr-tab-btn">Light</button>
                                 <button id="btn-webtheme-dark" class="wtr-tab-btn active">Dark</button>

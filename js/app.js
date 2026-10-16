@@ -135,13 +135,25 @@ const app = {
             books.forEach(book => {
                 const card = this.createBookCard(book);
                 if (bookGrid) bookGrid.appendChild(card);
-                
-                // Profil Kitaplık segmentine de ekle
-                if (profileBookGrid) {
+            });
+        }
+
+        // Profil -> Kitaplık sekmesine yalnızca favoriye eklenen kitapları ekle
+        if (profileBookGrid) {
+            const favoriteBooks = books.filter(b => b.isFavorite === true);
+            if (favoriteBooks.length === 0) {
+                profileBookGrid.innerHTML = `
+                    <div class="empty-state" style="display: flex; grid-column: 1 / -1; padding: 30px 10px;">
+                        <i data-lucide="star" class="empty-icon" style="width: 48px; height: 48px;"></i>
+                        <p>Favori kitaplığınız henüz boş. Ana sayfadaki kitapların sağ üst köşesindeki yıldız ikonuna dokunarak buraya ekleyebilirsiniz.</p>
+                    </div>
+                `;
+            } else {
+                favoriteBooks.forEach(book => {
                     const profileCard = this.createBookCard(book);
                     profileBookGrid.appendChild(profileCard);
-                }
-            });
+                });
+            }
         }
 
         // Yeni eklenen ikonları çizdir
@@ -259,12 +271,27 @@ const app = {
         }
     },
 
-    // Uygulama Genel Temasını Değiştir
+    // Uygulama Genel Temasını Değiştir (Kitap içi temadan bağımsız)
     async setAppTheme(themeName) {
-        document.body.className = ''; // Tüm sınıfları sil
+        const isReaderActive = document.body.classList.contains('reader-active');
+        document.body.className = '';
         document.body.classList.add(`theme-${themeName}`);
+        if (isReaderActive) {
+            document.body.classList.add('reader-active');
+        }
         
         await settingsDb.set('appTheme', themeName);
+
+        // Ana sayfadaki Ay / Güneş tema butonunun ikonunu güncelle
+        const btnHomeTheme = document.getElementById('btn-home-theme-toggle');
+        if (btnHomeTheme) {
+            const iconName = themeName === 'dark' ? 'sun' : 'moon';
+            btnHomeTheme.innerHTML = `<i data-lucide="${iconName}" style="width: 18px; height: 18px;"></i>`;
+            btnHomeTheme.title = themeName === 'dark' ? 'Aydınlık Temaya Geç' : 'Karanlık Temaya Geç';
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons({ node: btnHomeTheme });
+            }
+        }
 
         // Ayarlar ekranındaki butonların aktifliğini güncelle
         const themeButtons = document.querySelectorAll('#view-settings .theme-btn');
@@ -274,21 +301,12 @@ const app = {
                 btn.classList.add('active');
             }
         });
+    },
 
-        // WTR Settings Tabındaki Website Theme Butonlarını Güncelle
-        const btnWebThemeLight = document.getElementById('btn-webtheme-light');
-        const btnWebThemeDark = document.getElementById('btn-webtheme-dark');
-        if (btnWebThemeLight && btnWebThemeDark) {
-            btnWebThemeLight.classList.toggle('active', themeName === 'light');
-            btnWebThemeDark.classList.toggle('active', themeName === 'dark');
-        }
-
-        // Reader Modülünün Temasını Güncelle
-        if (typeof reader !== 'undefined') {
-            const defaultReaderTheme = themeName === 'dark' ? 'dark' : 'light';
-            await reader.setReaderTheme(defaultReaderTheme);
-            reader.updateReaderThemeUI(themeName);
-        }
+    async toggleAppTheme() {
+        const currentTheme = await settingsDb.get('appTheme', 'dark');
+        const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        await this.setAppTheme(nextTheme);
     },
 
     // 5. Dosya Yükleme ve İşleme Mekanizması
@@ -507,6 +525,14 @@ const app = {
                 this.switchView(viewId);
             });
         });
+
+        // Ana Sayfa Tema Değiştirme Butonu Tıklaması (Ay / Güneş)
+        const btnHomeTheme = document.getElementById('btn-home-theme-toggle');
+        if (btnHomeTheme) {
+            btnHomeTheme.addEventListener('click', () => {
+                this.toggleAppTheme();
+            });
+        }
 
         // Kitap Silme Modu Butonu Tıklaması
         const btnDeleteMode = document.getElementById('btn-home-delete-mode');
@@ -788,13 +814,13 @@ const app = {
         const btnWebThemeLight = document.getElementById('btn-webtheme-light');
         if (btnWebThemeLight) {
             btnWebThemeLight.addEventListener('click', () => {
-                app.setAppTheme('light');
+                reader.setReaderColorMode('light');
             });
         }
         const btnWebThemeDark = document.getElementById('btn-webtheme-dark');
         if (btnWebThemeDark) {
             btnWebThemeDark.addEventListener('click', () => {
-                app.setAppTheme('dark');
+                reader.setReaderColorMode('dark');
             });
         }
 
@@ -822,10 +848,9 @@ const app = {
             });
         });
 
-        // Sesli Kitap (TTS) Butonları (Ayarlar Tabı)
+        // Sesli Kitap (TTS) Butonları (Ses Tabı)
         document.getElementById('btn-tts-toggle').addEventListener('click', () => {
-            const isSpeaking = window.speechSynthesis.speaking;
-            if (isSpeaking) {
+            if (reader.isSpeakingTTS || (window.speechSynthesis && window.speechSynthesis.speaking)) {
                 reader.stopTTS();
             } else {
                 reader.startTTS();
@@ -835,33 +860,73 @@ const app = {
             reader.stopTTS();
         });
 
+        const ttsSpeedSelect = document.getElementById('tts-speed-select');
+        if (ttsSpeedSelect) {
+            ttsSpeedSelect.addEventListener('change', () => {
+                if (reader.isSpeakingTTS) {
+                    reader.restartTTSFromCurrentChunk();
+                }
+            });
+        }
+
+        const ttsVoiceSelect = document.getElementById('tts-voice-select');
+        if (ttsVoiceSelect) {
+            ttsVoiceSelect.addEventListener('change', () => {
+                if (reader.isSpeakingTTS) {
+                    reader.restartTTSFromCurrentChunk();
+                }
+            });
+        }
+
         // Slider ile İlerleme Ayarı (EPUB ve PDF için)
         const progressSlider = document.getElementById('reader-progress-slider');
         if (progressSlider) {
             // Dragging: Update labels dynamically
             progressSlider.addEventListener('input', (e) => {
                 const val = parseInt(e.target.value);
-                if (reader.currentBookType === 'epub' && reader.numberedChapters && reader.numberedChapters.length > 0) {
-                    const idx = Math.min(reader.numberedChapters.length - 1, Math.max(0, val - 1));
-                    const chapterLabel = reader.numberedChapters[idx].label;
-                    const percent = Math.round(((idx + 1) / reader.numberedChapters.length) * 100);
+                if (reader.currentBookType === 'epub') {
+                    const hasToc = reader.numberedChapters && reader.numberedChapters.length > 0;
+                    const total = hasToc ? reader.numberedChapters.length : (reader.epubBook && reader.epubBook.spine ? reader.epubBook.spine.length : 1);
+                    const idx = Math.min(total - 1, Math.max(0, val - 1));
+                    const chapterLabel = hasToc ? reader.numberedChapters[idx].label : `Bölüm ${idx + 1}`;
+                    const percent = Math.round(((idx + 1) / total) * 100);
                     
                     document.getElementById('reader-progress-percent').textContent = percent + '%';
-                    document.getElementById('reader-progress-label').textContent = `Bölüm ${idx + 1}: ${chapterLabel} (${idx + 1} / ${reader.numberedChapters.length})`;
+                    document.getElementById('reader-progress-label').textContent = hasToc
+                        ? `Bölüm ${idx + 1}: ${chapterLabel} (${idx + 1} / ${total})`
+                        : `Bölüm ${idx + 1} / ${total}`;
+                    const chIndicator = document.getElementById('panel-chapter-indicator');
+                    if (chIndicator) {
+                        chIndicator.textContent = `Bölüm ${idx + 1} / ${total} (${percent}%)`;
+                    }
                 } else if (reader.currentBookType === 'pdf' && reader.pdfDocument) {
                     const percent = Math.round((val / reader.pdfTotalPages) * 100);
                     document.getElementById('reader-progress-percent').textContent = percent + '%';
                     document.getElementById('reader-progress-label').textContent = `Sayfa ${val} / ${reader.pdfTotalPages}`;
+                    const chIndicator = document.getElementById('panel-chapter-indicator');
+                    if (chIndicator) {
+                        chIndicator.textContent = `Sayfa ${val} / ${reader.pdfTotalPages} (${percent}%)`;
+                    }
                 }
             });
 
             // Released: Perform navigation
             progressSlider.addEventListener('change', (e) => {
                 const val = parseInt(e.target.value);
-                if (reader.currentBookType === 'epub' && reader.epubBook && reader.epubRendition && reader.numberedChapters && reader.numberedChapters.length > 0) {
-                    const idx = Math.min(reader.numberedChapters.length - 1, Math.max(0, val - 1));
-                    const href = reader.numberedChapters[idx].href;
-                    if (href) reader.epubRendition.display(href);
+                if (reader.currentBookType === 'epub' && reader.epubBook && reader.epubRendition) {
+                    const hasToc = reader.numberedChapters && reader.numberedChapters.length > 0;
+                    if (hasToc) {
+                        const idx = Math.min(reader.numberedChapters.length - 1, Math.max(0, val - 1));
+                        const href = reader.numberedChapters[idx].href;
+                        if (href) reader.epubRendition.display(href);
+                    } else if (reader.epubBook.spine) {
+                        const total = reader.epubBook.spine.length;
+                        const idx = Math.min(total - 1, Math.max(0, val - 1));
+                        const spineItem = reader.epubBook.spine.get(idx);
+                        if (spineItem && spineItem.href) {
+                            reader.epubRendition.display(spineItem.href);
+                        }
+                    }
                 } else if (reader.currentBookType === 'pdf' && reader.pdfDocument) {
                     reader.renderPdfPage(val);
                 }
@@ -1070,6 +1135,18 @@ const app = {
             if (selection && selection.toString().trim().length > 0) {
                 return;
             }
+
+            // Çeviri popover'ı veya İçindekiler (TOC) paneli açıksa önce onları kapat
+            const popover = document.getElementById('translate-popover');
+            if (popover && popover.style.display === 'flex') {
+                reader.hidePopover();
+                return;
+            }
+            const tocPanel = document.getElementById('toc-panel');
+            if (tocPanel && tocPanel.classList.contains('open')) {
+                reader.closeTOCPanel();
+                return;
+            }
             
             const panel = document.getElementById('reader-options-panel');
             if (panel.classList.contains('open')) {
@@ -1124,6 +1201,14 @@ const app = {
                 <span class="progress-text">%${book.progressPercent} tamamlandı</span>
             </div>
         `;
+
+        const btnDelete = card.querySelector('.btn-delete-book');
+        if (btnDelete) {
+            btnDelete.onclick = (e) => {
+                e.stopPropagation();
+                this.deleteBook(book.id, book.title);
+            };
+        }
 
         const btnFav = card.querySelector('.btn-favorite-book');
         if (btnFav) {
@@ -1316,6 +1401,8 @@ const app = {
         }
     }
 };
+
+window.app = app;
 
 // Sayfa Yüklendiğinde Uygulamayı Başlat
 window.addEventListener('DOMContentLoaded', () => {
