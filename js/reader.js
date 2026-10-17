@@ -292,15 +292,16 @@ const reader = {
         }
     },
 
-    // Kitap açıldığında kayıtlı bölüm içi konuma geri kaydırır
+    // Kitap açıldığında kayıtlı bölüm içi konuma anında (tek seferde, üst kısmı göstermeden) geri kaydırır
     async restoreEpubReadingPosition(bookId) {
-        const finish = () => {
+        const epubViewerEl = document.getElementById('epub-viewer');
+        const revealAndFinish = () => {
+            if (epubViewerEl) epubViewerEl.style.opacity = '1';
             if (this.currentBookId === bookId) this.isRestoringPosition = false;
         };
 
         let saved = this.getSavedReadingPosition(bookId);
         if (!saved) {
-            // Eski sürümden kalan oturum kaydı (sayfa yenileme) yedeği
             try {
                 const raw = sessionStorage.getItem('endlessr_reader_scroll');
                 const s = raw ? JSON.parse(raw) : null;
@@ -310,61 +311,46 @@ const reader = {
             } catch (e) {}
         }
         if (!saved || (!(saved.ratio > 0) && !(saved.scrollY > 0))) {
-            finish();
+            revealAndFinish();
             return;
         }
-
-        // Görüntülenen bölüm indeksinin belirlenmesini bekle
-        const waitStart = Date.now();
-        while (this.currentBookId === bookId && this.getActiveSpineIndex() === null && Date.now() - waitStart < 2500) {
-            await new Promise(r => setTimeout(r, 40));
-        }
-        if (this.currentBookId !== bookId) return;
 
         const activeSpine = this.getActiveSpineIndex();
         if (saved.spineIndex !== undefined && saved.spineIndex !== null && activeSpine !== null && saved.spineIndex !== activeSpine) {
-            finish();
+            revealAndFinish();
             return;
         }
 
-        // Başlangıçta son geçerli konumu kayıtlı değerle hazırla
+        // Son geçerli konumu kayıtlı değerle hazırla
         this.lastValidScrollY = saved.scrollY || 0;
         this.lastValidScrollRatio = saved.ratio || 0;
 
-        // Yalnızca gerçek kullanıcı kaydırma hareketlerinde (touchmove, wheel, yön tuşları) geri yüklemeyi durdur
-        let userInteracted = false;
-        const onUserScroll = () => { userInteracted = true; };
-        const scrollEvents = ['touchmove', 'wheel'];
-        scrollEvents.forEach(ev => window.addEventListener(ev, onUserScroll, { passive: true, capture: true }));
+        // Iframe yüksekliğini tek seferde tam aç ve hedef piksel konumuna anında (0 gecikmeyle) git
+        this.expandEpubIframePreservingScroll();
 
-        let elapsed = 0;
-        try {
-            for (const t of [30, 100, 220, 450, 800, 1300, 2000]) {
-                await new Promise(r => setTimeout(r, t - elapsed));
-                elapsed = t;
-                if (this.currentBookId !== bookId || userInteracted) break;
+        const applyScrollOnce = () => {
+            const maxScroll = this.getMaxScroll();
+            const target = (saved.scrollY > 0)
+                ? saved.scrollY
+                : ((saved.ratio > 0 && maxScroll > 0) ? Math.round(saved.ratio * maxScroll) : 0);
+            const clampedTarget = maxScroll > 0 ? Math.min(target, maxScroll) : target;
 
-                // Iframe yüksekliğinin tam açıldığından emin ol
-                this.expandEpubIframePreservingScroll();
-
-                const maxScroll = this.getMaxScroll();
-                if (maxScroll <= 0 && saved.scrollY > 0) continue;
-
-                const target = (saved.ratio > 0 && maxScroll > 0)
-                    ? Math.round(saved.ratio * maxScroll)
-                    : saved.scrollY;
-                const clampedTarget = maxScroll > 0 ? Math.min(target, maxScroll) : target;
-
-                if (clampedTarget > 0) {
-                    this.setScrollTop(clampedTarget);
-                    this.lastValidScrollY = clampedTarget;
-                    if (maxScroll > 0) this.lastValidScrollRatio = clampedTarget / maxScroll;
-                }
+            if (clampedTarget > 0) {
+                this.setScrollTop(clampedTarget);
+                this.lastValidScrollY = clampedTarget;
+                if (maxScroll > 0) this.lastValidScrollRatio = clampedTarget / maxScroll;
             }
-        } finally {
-            scrollEvents.forEach(ev => window.removeEventListener(ev, onUserScroll, { capture: true }));
-            finish();
+        };
+
+        applyScrollOnce();
+
+        // Tek bir frame sonra boyutu ve konumu kesinleştirip görünür yap (2 saniyelik kademeli kaydırma yok)
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        if (this.currentBookId === bookId) {
+            this.expandEpubIframePreservingScroll();
+            applyScrollOnce();
         }
+        revealAndFinish();
     },
 
     // epub.js, pencere yüksekliği/genişliği değiştiğinde (mobil adres çubuğu, Google Çeviri çubuğu, scrollbar)
@@ -616,6 +602,12 @@ const reader = {
                 } catch (e) {}
             }
 
+            const epubViewerEl = document.getElementById('epub-viewer');
+            const hasSavedEpubScroll = !!(book.type === 'epub' && this.settings.readerType !== 'old' && savedPos && (savedPos.scrollY > 0 || savedPos.ratio > 0));
+            if (epubViewerEl) {
+                epubViewerEl.style.opacity = hasSavedEpubScroll ? '0' : '1';
+            }
+
             // Kitap tipine göre okuyucuyu başlat
             if (book.type === 'epub') {
                 await this.initEpub(book.file, targetStartLocation);
@@ -626,10 +618,11 @@ const reader = {
             // Temayı uygula
             await this.setReaderTheme(this.settings.theme, false);
 
-            // Bölüm içi kaldığı yere geri dön (hem sayfa yenilemede hem ana sayfadan geri gelince)
+            // Bölüm içi kaldığı yere anında geri dön (üst kısmı hiç göstermeden)
             if (book.type === 'epub' && this.settings.readerType !== 'old') {
-                this.restoreEpubReadingPosition(bookId);
+                await this.restoreEpubReadingPosition(bookId);
             } else {
+                if (epubViewerEl) epubViewerEl.style.opacity = '1';
                 this.isRestoringPosition = false;
                 if (this.isRestoringBook) {
                     try {
@@ -637,8 +630,7 @@ const reader = {
                         if (rawScroll) {
                             const savedScroll = JSON.parse(rawScroll);
                             if (savedScroll && savedScroll.bookId === bookId && savedScroll.scrollY > 0) {
-                                setTimeout(() => { this.setScrollTop(savedScroll.scrollY); }, 80);
-                                setTimeout(() => { this.setScrollTop(savedScroll.scrollY); }, 250);
+                                this.setScrollTop(savedScroll.scrollY);
                             }
                         }
                     } catch (e) {}
@@ -662,6 +654,8 @@ const reader = {
             }
 
         } catch (err) {
+            const epubViewerEl = document.getElementById('epub-viewer');
+            if (epubViewerEl) epubViewerEl.style.opacity = '1';
             this.isRestoringBook = false;
             this.isRestoringPosition = false;
             console.error("Kitap açılırken hata:", err);
@@ -1051,8 +1045,7 @@ const reader = {
                 }
 
                 if (rType !== "old") {
-                    setTimeout(() => { this.expandEpubIframePreservingScroll(); }, 60);
-                    setTimeout(() => { this.expandEpubIframePreservingScroll(); }, 250);
+                    this.expandEpubIframePreservingScroll();
                 }
                 
             } catch (err) {
@@ -1449,17 +1442,15 @@ const reader = {
             viewerContainer.innerHTML = '';
             viewerContainer.appendChild(pageContainer);
 
-            // Eğer kaydedilmiş bir dikey kaydırma konumu varsa ve açılış sayfasıysa uygula
+            // Eğer kaydedilmiş bir dikey kaydırma konumu varsa ve açılış sayfasıysa anında uygula
             let appliedScrollTop = 0;
             if (this.pdfSavedScrollTop && pageNumber === this.pdfCurrentPage) {
                 appliedScrollTop = this.pdfSavedScrollTop;
                 this.pdfSavedScrollTop = 0; // Bir kere uygulandıktan sonra sıfırla
-                setTimeout(() => {
+                this.setScrollTop(appliedScrollTop);
+                requestAnimationFrame(() => {
                     this.setScrollTop(appliedScrollTop);
-                }, 80);
-                setTimeout(() => {
-                    this.setScrollTop(appliedScrollTop);
-                }, 250);
+                });
             } else {
                 this.setScrollTop(0);
             }
@@ -2388,13 +2379,27 @@ const reader = {
         
         let css = '';
         if (rType !== "old") {
+            const minBodyHeight = Math.max(300, window.innerHeight || 600);
             css = `
-                html, body {
+                html {
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    min-height: 0 !important;
+                    height: auto !important;
+                    box-sizing: border-box !important;
+                    background-color: ${colors.bg} !important;
+                    color: ${colors.fg} !important;
+                    overflow-x: hidden !important;
+                }
+                body {
                     margin: 0 !important;
                     padding: calc(env(safe-area-inset-top, 30px) + 15px) ${padVal}px 30px !important;
                     width: 100% !important;
                     max-width: 100% !important;
-                    min-height: 100vh !important;
+                    min-height: ${minBodyHeight}px !important;
+                    height: auto !important;
                     box-sizing: border-box !important;
                     background-color: ${colors.bg} !important;
                     color: ${colors.fg} !important;
