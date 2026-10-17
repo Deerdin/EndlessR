@@ -121,6 +121,10 @@ const app = {
     async init() {
         console.log("EndlessR Kitap Okuma Uygulaması Başlatıldı.");
 
+        if (typeof window !== 'undefined' && window.history && 'scrollRestoration' in window.history) {
+            window.history.scrollRestoration = 'manual';
+        }
+
         // 1. Service Worker Kaydı (Çevrimdışı PWA Desteği)
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('./sw.js')

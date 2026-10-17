@@ -24,6 +24,11 @@ const reader = {
     pdfScrollTimeout: null,
     
     epubScrollTimeout: null,
+    lastValidScrollY: 0,
+    lastValidScrollRatio: 0,
+    isUserScrolling: false,
+    userScrollTimer: null,
+    expandDebounceTimer: null,
 
     // TTS Kuyruk Durumu
     isSpeakingTTS: false,
@@ -31,19 +36,129 @@ const reader = {
     ttsCurrentIndex: 0,
     ttsTimeout: null,
 
+    // Mevcut dikey kaydırma konumunu tüm olası kapsayıcılardan güvenli şekilde okur
+    getScrollTop() {
+        return Math.max(
+            window.scrollY || 0,
+            window.pageYOffset || 0,
+            document.documentElement ? (document.documentElement.scrollTop || 0) : 0,
+            document.body ? (document.body.scrollTop || 0) : 0
+        );
+    },
+
+    // Dikey kaydırma konumunu ayarlar
+    setScrollTop(y) {
+        const targetY = Math.max(0, Math.round(y || 0));
+        window.scrollTo(0, targetY);
+        if (document.documentElement && document.documentElement.scrollTop !== targetY) {
+            document.documentElement.scrollTop = targetY;
+        }
+        if (document.body && document.body.scrollTop !== targetY) {
+            document.body.scrollTop = targetY;
+        }
+    },
+
+    // Maksimum dikey kaydırılabilir yüksekliği hesaplar
+    getMaxScroll() {
+        const docH = Math.max(
+            document.documentElement ? (document.documentElement.scrollHeight || 0) : 0,
+            document.body ? (document.body.scrollHeight || 0) : 0
+        );
+        return Math.max(0, docH - window.innerHeight);
+    },
+
+    // Aktif EPUB bölüm (spine) indeksini güvenli şekilde döndürür
+    getActiveSpineIndex() {
+        if (typeof this.lastSpineIndex === 'number') return this.lastSpineIndex;
+        try {
+            if (this.epubRendition && this.epubRendition.manager && this.epubRendition.manager.views) {
+                const views = this.epubRendition.manager.views._views;
+                if (Array.isArray(views) && views.length > 0 && views[0].section && typeof views[0].section.index === 'number') {
+                    return views[0].section.index;
+                }
+            }
+        } catch (e) {}
+        return null;
+    },
+
+    // EPUB iframe yüksekliğini kaydırma konumunu (scrollY) bozmadan ve epub.js reframe döngüsünü tetiklemeden günceller
+    expandEpubIframePreservingScroll() {
+        if (this.currentBookType !== 'epub' || !this.epubRendition || this.settings.readerType === 'old') return;
+        const savedScrollY = this.getScrollTop();
+        try {
+            const mgr = this.epubRendition.manager;
+            if (mgr && mgr.views && Array.isArray(mgr.views._views)) {
+                mgr.views._views.forEach(view => {
+                    if (view && view.iframe && view.document && view.document.body) {
+                        const body = view.document.body;
+                        const docEl = view.document.documentElement;
+                        let newHeight = Math.max(
+                            body.scrollHeight || 0,
+                            body.offsetHeight || 0,
+                            docEl ? (docEl.offsetHeight || 0) : 0
+                        );
+                        if (view.contents && typeof view.contents.textHeight === 'function') {
+                            try {
+                                const th = view.contents.textHeight();
+                                if (th > newHeight) newHeight = th;
+                            } catch (e) {}
+                        }
+                        if (newHeight > 0 && Math.abs((view._height || 0) - newHeight) > 4) {
+                            view._height = newHeight;
+                            if (view.element) view.element.style.height = newHeight + 'px';
+                            view.iframe.style.height = newHeight + 'px';
+                        }
+                    }
+                });
+            }
+        } catch (e) {
+            console.warn("Iframe boyutu güncellenirken hata:", e);
+        }
+        if (savedScrollY > 0 && Math.abs(this.getScrollTop() - savedScrollY) > 2) {
+            this.setScrollTop(savedScrollY);
+        }
+    },
+
+    scheduleExpandEpubIframe(delay = 100) {
+        if (this.expandDebounceTimer) clearTimeout(this.expandDebounceTimer);
+        this.expandDebounceTimer = setTimeout(() => {
+            this.expandDebounceTimer = null;
+            this.expandEpubIframePreservingScroll();
+        }, delay);
+    },
+
     // EPUB İlerleme Hesaplama ve Arayüz Senkronizasyonu (Tek Merkezli)
     async updateEpubProgressUI(saveToDb = true) {
         if (this.currentBookType !== 'epub' || !this.epubRendition || !this.epubBook) return;
 
         try {
-            const location = this.epubRendition.currentLocation();
-            if (!location || !location.start) return;
+            // Scrolled modda currentLocation() çağrısı epub.js içinde updateLayout() -> setLayout() tetikleyip
+            // iframe boyutunu ve çeviri DOM'unu sıfırladığı için mevcut location nesnesini doğrudan kullan
+            let location = this.epubRendition.location;
+            if ((!location || !location.start) && this.settings.readerType === 'old') {
+                location = this.epubRendition.currentLocation();
+            }
+            if (!location || !location.start) {
+                const fallbackIdx = this.getActiveSpineIndex();
+                if (fallbackIdx === null) return;
+                const spineItem = this.epubBook.spine ? this.epubBook.spine.get(fallbackIdx) : null;
+                location = {
+                    start: {
+                        index: fallbackIdx,
+                        href: spineItem ? spineItem.href : '',
+                        cfi: this.epubLocation || ''
+                    }
+                };
+            }
 
             if (location.start.cfi) {
                 this.epubLocation = location.start.cfi;
             }
 
-            const currentSpineIndex = typeof location.start.index === 'number' ? location.start.index : 0;
+            const activeIdx = this.getActiveSpineIndex();
+            const currentSpineIndex = typeof location.start.index === 'number'
+                ? location.start.index
+                : (typeof activeIdx === 'number' ? activeIdx : 0);
             const totalSpineItems = (this.epubBook.spine && this.epubBook.spine.length) ? this.epubBook.spine.length : 1;
 
             const hasToc = this.numberedChapters && this.numberedChapters.length > 0;
@@ -52,7 +167,12 @@ const reader = {
             let chapterTitle = "";
 
             if (hasToc) {
-                const activeIndex = this.findActiveTocIndex(location);
+                const activeIndex = this.findActiveTocIndex({
+                    start: {
+                        index: currentSpineIndex,
+                        href: location.start.href || ''
+                    }
+                });
                 totalSteps = this.numberedChapters.length;
                 if (activeIndex !== -1) {
                     currentStep = activeIndex + 1;
@@ -108,26 +228,214 @@ const reader = {
         }, 600);
     },
 
+    // Bölüm içindeki dikey okuma konumunu kitap bazında kalıcı olarak kaydeder (ana sayfaya çıkıp dönünce kaldığı yerden devam için)
+    saveReadingPosition(allowZero = false) {
+        if (!this.currentBookId || this.isRestoringPosition) return;
+        if (this.currentBookType !== 'epub') return;
+        const spineIndex = this.getActiveSpineIndex();
+        if (spineIndex === null || spineIndex === undefined) return;
+
+        const liveScrollY = this.getScrollTop();
+        const maxScroll = this.getMaxScroll();
+
+        let scrollY = liveScrollY;
+        let ratio = maxScroll > 0 ? (liveScrollY / maxScroll) : 0;
+
+        if (liveScrollY > 0) {
+            this.lastValidScrollY = liveScrollY;
+            if (maxScroll > 0) this.lastValidScrollRatio = ratio;
+        } else if (!allowZero) {
+            // Sayfadan çıkarken veya tarayıcı geri tuşunda (popstate) scrollY anlık 0'a düşerse
+            // kullanıcının bölüm ortasındaki son geçerli konumunu koru, 0 ile ezme
+            if (this.lastValidScrollY > 0) {
+                scrollY = this.lastValidScrollY;
+                ratio = this.lastValidScrollRatio > 0 ? this.lastValidScrollRatio : (maxScroll > 0 ? scrollY / maxScroll : 0);
+            } else {
+                const existing = this.getSavedReadingPosition(this.currentBookId);
+                if (existing && existing.spineIndex === spineIndex && (existing.scrollY > 0 || existing.ratio > 0)) {
+                    return;
+                }
+            }
+        }
+
+        const data = {
+            spineIndex: spineIndex,
+            scrollY: Math.round(scrollY),
+            ratio: ratio,
+            cfi: this.epubLocation || null,
+            ts: Date.now()
+        };
+        try { localStorage.setItem('endlessr_pos_' + this.currentBookId, JSON.stringify(data)); } catch (e) {}
+    },
+
+    getSavedReadingPosition(bookId) {
+        try {
+            const raw = localStorage.getItem('endlessr_pos_' + bookId);
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            return null;
+        }
+    },
+
+    // Kitap açıldığında kayıtlı bölüm içi konuma geri kaydırır
+    async restoreEpubReadingPosition(bookId) {
+        const finish = () => {
+            if (this.currentBookId === bookId) this.isRestoringPosition = false;
+        };
+
+        let saved = this.getSavedReadingPosition(bookId);
+        if (!saved) {
+            // Eski sürümden kalan oturum kaydı (sayfa yenileme) yedeği
+            try {
+                const raw = sessionStorage.getItem('endlessr_reader_scroll');
+                const s = raw ? JSON.parse(raw) : null;
+                if (s && s.bookId === bookId && s.scrollY > 0) {
+                    saved = { spineIndex: s.spineIndex, scrollY: s.scrollY, ratio: 0 };
+                }
+            } catch (e) {}
+        }
+        if (!saved || (!(saved.ratio > 0) && !(saved.scrollY > 0))) {
+            finish();
+            return;
+        }
+
+        // Görüntülenen bölüm indeksinin belirlenmesini bekle
+        const waitStart = Date.now();
+        while (this.currentBookId === bookId && this.getActiveSpineIndex() === null && Date.now() - waitStart < 2500) {
+            await new Promise(r => setTimeout(r, 40));
+        }
+        if (this.currentBookId !== bookId) return;
+
+        const activeSpine = this.getActiveSpineIndex();
+        if (saved.spineIndex !== undefined && saved.spineIndex !== null && activeSpine !== null && saved.spineIndex !== activeSpine) {
+            finish();
+            return;
+        }
+
+        // Başlangıçta son geçerli konumu kayıtlı değerle hazırla
+        this.lastValidScrollY = saved.scrollY || 0;
+        this.lastValidScrollRatio = saved.ratio || 0;
+
+        // Yalnızca gerçek kullanıcı kaydırma hareketlerinde (touchmove, wheel, yön tuşları) geri yüklemeyi durdur
+        let userInteracted = false;
+        const onUserScroll = () => { userInteracted = true; };
+        const scrollEvents = ['touchmove', 'wheel'];
+        scrollEvents.forEach(ev => window.addEventListener(ev, onUserScroll, { passive: true, capture: true }));
+
+        let elapsed = 0;
+        try {
+            for (const t of [30, 100, 220, 450, 800, 1300, 2000]) {
+                await new Promise(r => setTimeout(r, t - elapsed));
+                elapsed = t;
+                if (this.currentBookId !== bookId || userInteracted) break;
+
+                // Iframe yüksekliğinin tam açıldığından emin ol
+                this.expandEpubIframePreservingScroll();
+
+                const maxScroll = this.getMaxScroll();
+                if (maxScroll <= 0 && saved.scrollY > 0) continue;
+
+                const target = (saved.ratio > 0 && maxScroll > 0)
+                    ? Math.round(saved.ratio * maxScroll)
+                    : saved.scrollY;
+                const clampedTarget = maxScroll > 0 ? Math.min(target, maxScroll) : target;
+
+                if (clampedTarget > 0) {
+                    this.setScrollTop(clampedTarget);
+                    this.lastValidScrollY = clampedTarget;
+                    if (maxScroll > 0) this.lastValidScrollRatio = clampedTarget / maxScroll;
+                }
+            }
+        } finally {
+            scrollEvents.forEach(ev => window.removeEventListener(ev, onUserScroll, { capture: true }));
+            finish();
+        }
+    },
+
+    // epub.js, pencere yüksekliği/genişliği değiştiğinde (mobil adres çubuğu, Google Çeviri çubuğu, scrollbar)
+    // bölümü silip (clear) yeniden çiziyordu (display). Bu da çeviri sırasında sayfanın sürekli yenilenip
+    // en üste atılmasına ve takılmasına yol açıyordu. Kaydırmalı modda bu yıkıcı yeniden çizimi tamamen devre dışı bırak.
+    patchEpubResizeHandling() {
+        const rendition = this.epubRendition;
+        if (!rendition) return;
+
+        const apply = () => {
+            if (this.settings.readerType === 'old') return;
+
+            // Rendition.onResized'ın bölümü baştan yüklemesini (this.display) engelle
+            rendition.onResized = () => {
+                this.scheduleExpandEpubIframe(80);
+            };
+
+            const mgr = rendition.manager;
+            if (!mgr || mgr.__endlessrResizePatched) return;
+
+            // Stage'in window resize/orientationchange dinleyicilerini kaldır
+            if (mgr.stage) {
+                if (mgr.stage.resizeFunc) {
+                    window.removeEventListener('resize', mgr.stage.resizeFunc, false);
+                    window.removeEventListener('resize', mgr.stage.resizeFunc);
+                }
+                if (mgr.stage.orientationChangeFunc) {
+                    window.removeEventListener('orientationchange', mgr.stage.orientationChangeFunc, false);
+                    window.removeEventListener('orientationchange', mgr.stage.orientationChangeFunc);
+                }
+            }
+
+            // Manager resize / onResized metodlarının clear() çağırmasını engelle
+            mgr.onResized = () => {
+                this.scheduleExpandEpubIframe(80);
+            };
+            mgr.onOrientationChange = () => {
+                this.scheduleExpandEpubIframe(150);
+            };
+            mgr.resize = () => {
+                this.scheduleExpandEpubIframe(80);
+            };
+
+            // updateLayout'un her konum sorgusunda setLayout -> layout.format -> scrollTo(0,0) tetiklemesini engelle
+            if (typeof mgr.updateLayout === 'function') {
+                mgr.updateLayout = () => {
+                    if (!mgr.stage || !mgr.layout) return;
+                    mgr._stageSize = mgr.stage.size();
+                    mgr.layout.calculate(mgr._stageSize.width, mgr._stageSize.height);
+                    mgr.viewSettings.width = mgr.layout.width;
+                    mgr.viewSettings.height = mgr.layout.height;
+                };
+            }
+
+            mgr.__endlessrResizePatched = true;
+        };
+
+        apply();
+        if (rendition.started && typeof rendition.started.then === 'function') {
+            rendition.started.then(apply).catch(() => {});
+        }
+    },
+
     savePdfScrollLocation() {
-        if (this.currentBookType !== 'pdf' || !this.pdfDocument) return;
-        
+        if (this.currentBookType !== 'pdf' || !this.pdfDocument || !this.currentBookId) return;
+        const pageNum = this.pdfCurrentPage;
+        const scrollTop = Math.round(this.getScrollTop());
+        const lastLocationString = `${pageNum};${scrollTop}`;
+        const percent = Math.round((pageNum / this.pdfTotalPages) * 100);
+
+        if (this.bookData) {
+            this.bookData.progressPercent = percent;
+            this.bookData.lastLocation = lastLocationString;
+        }
+        try {
+            localStorage.setItem('endlessr_pdf_pos_' + this.currentBookId, lastLocationString);
+        } catch (e) {}
+
         if (this.pdfScrollTimeout) clearTimeout(this.pdfScrollTimeout);
         this.pdfScrollTimeout = setTimeout(async () => {
             try {
-                const pageNum = this.pdfCurrentPage;
-                const scrollTop = window.scrollY;
-                const lastLocationString = `${pageNum};${scrollTop}`;
-                
-                const percent = Math.round((pageNum / this.pdfTotalPages) * 100);
-                if (this.bookData) {
-                    this.bookData.progressPercent = percent;
-                    this.bookData.lastLocation = lastLocationString;
-                }
                 await booksDb.updateProgress(this.currentBookId, percent, lastLocationString);
             } catch (e) {
                 console.warn("PDF scroll kaydetme hatası:", e);
             }
-        }, 600);
+        }, 400);
     },
 
     // Okuyucu Stil Ayarları (IndexedDB'den veya varsayılan)
@@ -163,6 +471,8 @@ const reader = {
             this.bookData = book;
             this.detectedLang = book.detectedLang || null;
             this.isRestoringBook = !!(options && options.isRestore);
+            // Kitap yüklenirken (bölüm başı görünürken) kayıtlı konumun üzerine yazılmasını engelle
+            this.isRestoringPosition = true;
 
             // Arayüzü hazırla
             document.getElementById('reader-book-title').textContent = book.title;
@@ -198,6 +508,8 @@ const reader = {
             this.lastSpineIndex = null;
             this.lastEpubCfi = null;
             this.lastPdfPage = null;
+            this.lastValidScrollY = 0;
+            this.lastValidScrollRatio = 0;
 
             // Ayarları yükle (Ana sayfa temasıyla senkronize kitap içi tema ayarları)
             this.settings.fontSize = await settingsDb.get('readerFontSize', 100);
@@ -288,9 +600,17 @@ const reader = {
             // Kitap yüklenmeden önce okuyucu temasını hazırla
             await this.setReaderTheme(this.settings.theme, false);
 
-            const targetStartLocation = (options && options.restoreLocation !== undefined && options.restoreLocation !== null)
+            const savedPos = (book.type === 'epub') ? this.getSavedReadingPosition(bookId) : null;
+            let targetStartLocation = (options && options.restoreLocation !== undefined && options.restoreLocation !== null)
                 ? options.restoreLocation
-                : book.lastLocation;
+                : ((savedPos && savedPos.cfi) ? savedPos.cfi : book.lastLocation);
+
+            if (book.type === 'pdf' && (!options || options.restoreLocation === undefined || options.restoreLocation === null)) {
+                try {
+                    const savedPdfLoc = localStorage.getItem('endlessr_pdf_pos_' + bookId);
+                    if (savedPdfLoc) targetStartLocation = savedPdfLoc;
+                } catch (e) {}
+            }
 
             // Kitap tipine göre okuyucuyu başlat
             if (book.type === 'epub') {
@@ -302,18 +622,23 @@ const reader = {
             // Temayı uygula
             await this.setReaderTheme(this.settings.theme, false);
 
-            // Eğer sayfa yenilemesinden geri yükleniyorsa dikey kaydırma konumunu da geri yükle
-            if (this.isRestoringBook) {
-                try {
-                    const rawScroll = sessionStorage.getItem('endlessr_reader_scroll');
-                    if (rawScroll) {
-                        const savedScroll = JSON.parse(rawScroll);
-                        if (savedScroll && savedScroll.bookId === bookId && savedScroll.scrollY > 0) {
-                            setTimeout(() => { window.scrollTo(0, savedScroll.scrollY); }, 80);
-                            setTimeout(() => { window.scrollTo(0, savedScroll.scrollY); }, 250);
+            // Bölüm içi kaldığı yere geri dön (hem sayfa yenilemede hem ana sayfadan geri gelince)
+            if (book.type === 'epub' && this.settings.readerType !== 'old') {
+                this.restoreEpubReadingPosition(bookId);
+            } else {
+                this.isRestoringPosition = false;
+                if (this.isRestoringBook) {
+                    try {
+                        const rawScroll = sessionStorage.getItem('endlessr_reader_scroll');
+                        if (rawScroll) {
+                            const savedScroll = JSON.parse(rawScroll);
+                            if (savedScroll && savedScroll.bookId === bookId && savedScroll.scrollY > 0) {
+                                setTimeout(() => { this.setScrollTop(savedScroll.scrollY); }, 80);
+                                setTimeout(() => { this.setScrollTop(savedScroll.scrollY); }, 250);
+                            }
                         }
-                    }
-                } catch (e) {}
+                    } catch (e) {}
+                }
             }
             this.isRestoringBook = false;
 
@@ -334,6 +659,7 @@ const reader = {
 
         } catch (err) {
             this.isRestoringBook = false;
+            this.isRestoringPosition = false;
             console.error("Kitap açılırken hata:", err);
             alert("Kitap yüklenemedi.");
             this.closeReader();
@@ -386,6 +712,9 @@ const reader = {
             allowScriptedContent: true
         });
 
+        // Yükseklik değişimlerinde (adres çubuğu / çeviri) bölümün silinip yeniden çizilmesini engelle
+        this.patchEpubResizeHandling();
+
         // İçindekiler listesini yükle
         await this.loadEpubToc();
 
@@ -426,8 +755,16 @@ const reader = {
             if (location && location.start && location.start.cfi) {
                 this.epubLocation = location.start.cfi;
             }
-            const currentSpineIndex = (location && location.start) ? location.start.index : 0;
-            const spineChanged = this.lastSpineIndex !== null && this.lastSpineIndex !== currentSpineIndex;
+            const hasNumericIndex = !!(location && location.start && typeof location.start.index === 'number');
+            const fallbackIndex = this.getActiveSpineIndex();
+            const currentSpineIndex = hasNumericIndex
+                ? location.start.index
+                : (typeof fallbackIndex === 'number' ? fallbackIndex : 0);
+
+            const spineChanged = this.lastSpineIndex !== null &&
+                                 typeof this.lastSpineIndex === 'number' &&
+                                 hasNumericIndex &&
+                                 this.lastSpineIndex !== currentSpineIndex;
             const cfi = (location && location.start && location.start.cfi) ? location.start.cfi : this.epubLocation;
 
             this.updateEpubProgressUI(true);
@@ -463,11 +800,14 @@ const reader = {
             this.lastSpineIndex = currentSpineIndex;
             this.lastEpubCfi = cfi;
 
-            // Bölüm geçişinde iframe ve pencere scrollunu en üste sıfırla
+            // Yalnızca gerçek bölüm değişiminde (ve geri yükleme yapılmıyorken) en üste kaydır ve yeni bölümü 0 olarak kaydet
             const viewer = document.getElementById('epub-viewer');
             if (viewer) viewer.scrollTop = 0;
-            if (spineChanged && !this.isRestoringBook) {
-                window.scrollTo(0, 0);
+            if (spineChanged && !this.isRestoringBook && !this.isRestoringPosition && this.settings.readerType !== 'infinite') {
+                this.lastValidScrollY = 0;
+                this.lastValidScrollRatio = 0;
+                this.setScrollTop(0);
+                this.saveReadingPosition(true);
                 try { sessionStorage.removeItem('endlessr_reader_scroll'); } catch (e) {}
             }
         });
@@ -543,11 +883,48 @@ const reader = {
         this.epubRendition.hooks.content.register((contents) => {
             try {
                 const doc = contents.document;
+                const rType = this.settings.readerType || "single";
+
+                // Bölüm indeksini anında yakala (relocated olayını beklemeden)
+                if (typeof contents.sectionIndex === 'number' && this.lastSpineIndex === null) {
+                    this.lastSpineIndex = contents.sectionIndex;
+                }
+
+                // Kaydırmalı modda epub.js'in dahili ResizeObserver / viewport sıfırlama döngüsünü devre dışı bırak
+                this.patchEpubResizeHandling();
+                if (rType !== "old") {
+                    if (contents.observer && typeof contents.observer.disconnect === 'function') {
+                        contents.observer.disconnect();
+                    }
+                    if (contents.expanding) {
+                        clearTimeout(contents.expanding);
+                    }
+                    if (contents._resizeCheck && doc) {
+                        doc.removeEventListener('transitionend', contents._resizeCheck);
+                    }
+                    contents.size = () => {};
+                    contents.viewport = () => ({});
+                    contents.resizeCheck = () => {
+                        this.scheduleExpandEpubIframe(100);
+                    };
+
+                    if (this.epubRendition && this.epubRendition.manager && this.epubRendition.manager.views) {
+                        const views = this.epubRendition.manager.views._views;
+                        if (Array.isArray(views)) {
+                            views.forEach(v => {
+                                if (v) {
+                                    v.expand = () => {
+                                        this.expandEpubIframePreservingScroll();
+                                    };
+                                }
+                            });
+                        }
+                    }
+                }
                 
                 // Metin değişikliklerini (find-replace) uygula
                 this.applyReplacementsToDoc(doc, this.currentBookId);
 
-                const rType = this.settings.readerType || "single";
                 this.applyCustomStylesToDoc(doc);
                 
                 // Sync to Chrome translation sandbox
@@ -630,6 +1007,12 @@ const reader = {
                     const spacer = doc.createElement('div');
                     spacer.style.height = '80px';
                     body.appendChild(spacer);
+                }
+
+                if (rType !== "old") {
+                    this.scheduleExpandEpubIframe(30);
+                    setTimeout(() => { this.expandEpubIframePreservingScroll(); }, 180);
+                    setTimeout(() => { this.expandEpubIframePreservingScroll(); }, 500);
                 }
                 
             } catch (err) {
@@ -1022,12 +1405,18 @@ const reader = {
             viewerContainer.appendChild(pageContainer);
 
             // Eğer kaydedilmiş bir dikey kaydırma konumu varsa ve açılış sayfasıysa uygula
+            let appliedScrollTop = 0;
             if (this.pdfSavedScrollTop && pageNumber === this.pdfCurrentPage) {
-                const scrollTopToApply = this.pdfSavedScrollTop;
+                appliedScrollTop = this.pdfSavedScrollTop;
                 this.pdfSavedScrollTop = 0; // Bir kere uygulandıktan sonra sıfırla
                 setTimeout(() => {
-                    window.scrollTo(0, scrollTopToApply);
-                }, 100);
+                    this.setScrollTop(appliedScrollTop);
+                }, 80);
+                setTimeout(() => {
+                    this.setScrollTop(appliedScrollTop);
+                }, 250);
+            } else {
+                this.setScrollTop(0);
             }
 
             // Sayfa numarasını güncelle
@@ -1041,13 +1430,17 @@ const reader = {
             if (chIndicator) {
                 chIndicator.textContent = `Sayfa ${this.pdfCurrentPage} / ${this.pdfTotalPages} (${percent}%)`;
             }
+            const pdfLocStr = `${this.pdfCurrentPage};${appliedScrollTop}`;
             if (this.bookData) {
                 this.bookData.progressPercent = percent;
-                this.bookData.lastLocation = `${this.pdfCurrentPage};0`;
+                this.bookData.lastLocation = pdfLocStr;
             }
+            try {
+                localStorage.setItem('endlessr_pdf_pos_' + this.currentBookId, pdfLocStr);
+            } catch (e) {}
             
-            // DB'ye kaydet (Yeni sayfaya geçildiğinde kaydırma 0'dan başlar)
-            booksDb.updateProgress(this.currentBookId, percent, `${this.pdfCurrentPage};0`);
+            // DB'ye kaydet
+            booksDb.updateProgress(this.currentBookId, percent, pdfLocStr);
  
             // PDF sayfa geçişini geçmişe kaydet (NavHistory)
             if (typeof navHistory !== 'undefined' && !navHistory.isNavigatingBack) {
@@ -1606,88 +1999,137 @@ const reader = {
 
     syncToTranslationSandbox(doc) {
         if (!doc) return;
-        
+
         // 1. Get or create sandbox element in main document
         let sandbox = document.getElementById('translation-sandbox');
         if (!sandbox) {
             sandbox = document.createElement('div');
             sandbox.id = 'translation-sandbox';
-            // Position off-screen but keep in layout so Chrome translates it
-            sandbox.style.cssText = 'position: absolute; left: -9999px; top: -9999px; width: 1px; height: 1px; overflow: hidden;';
+            // Keep sandbox in main document so Chrome translates it, but isolate layout/scroll impact
+            sandbox.style.cssText = 'position: fixed; left: 0; top: 0; width: 300px; height: 1px; opacity: 0.001; pointer-events: none; overflow: hidden; z-index: -9999; contain: strict; user-select: none;';
+            sandbox.setAttribute('aria-hidden', 'true');
             document.body.appendChild(sandbox);
         }
-        
+
+        // Prevent Chrome's built-in page translator from directly mutating the EPUB iframe DOM at the same time
+        // (all translations flow cleanly through #translation-sandbox -> requestAnimationFrame batch update)
+        try {
+            if (doc.documentElement) {
+                doc.documentElement.setAttribute('translate', 'no');
+                doc.documentElement.classList.add('notranslate');
+            }
+            if (doc.body) {
+                doc.body.setAttribute('translate', 'no');
+                doc.body.classList.add('notranslate');
+            }
+            if (doc.defaultView && doc.defaultView.frameElement) {
+                doc.defaultView.frameElement.setAttribute('translate', 'no');
+                doc.defaultView.frameElement.classList.add('notranslate');
+            }
+        } catch (e) {}
+
         // Clear previous sandbox contents and stop old observer
         if (this.sandboxObserver) {
             this.sandboxObserver.disconnect();
             this.sandboxObserver = null;
         }
+        if (this.sandboxRafId) {
+            cancelAnimationFrame(this.sandboxRafId);
+            this.sandboxRafId = null;
+        }
         sandbox.innerHTML = '';
-        
+
         const selectors = 'p, h1, h2, h3, h4, h5, h6, li';
         const iframeElements = Array.from(doc.querySelectorAll(selectors));
         const elementMap = new Map();
-        
+        const sandboxElementMap = new Map();
+
         const lang = this.detectedLang || 'en';
         document.documentElement.setAttribute('lang', lang);
         sandbox.setAttribute('lang', lang);
-        
+        sandbox.setAttribute('translate', 'yes');
+
+        const fragment = document.createDocumentFragment();
+
         iframeElements.forEach((el, idx) => {
             const txt = el.innerText || el.textContent;
             if (txt && txt.trim().length > 0) {
-                // Link element
-                el.setAttribute('data-sync-id', idx);
-                
-                // Create corresponding element in sandbox
+                const syncId = idx.toString();
+                el.setAttribute('data-sync-id', syncId);
+
                 const sandboxEl = document.createElement(el.tagName.toLowerCase());
-                sandboxEl.setAttribute('data-sync-id', idx);
-                
-                // Store original text if not already stored
+                sandboxEl.setAttribute('data-sync-id', syncId);
+
                 if (!el.hasAttribute('data-original-text')) {
                     el.setAttribute('data-original-text', txt);
                 }
-                
+
                 sandboxEl.textContent = el.getAttribute('data-original-text');
-                sandbox.appendChild(sandboxEl);
-                
-                elementMap.set(idx.toString(), el);
+                fragment.appendChild(sandboxEl);
+
+                elementMap.set(syncId, el);
+                sandboxElementMap.set(syncId, sandboxEl);
             }
         });
-        
+
         if (elementMap.size === 0) return;
-        
-        // 2. Set up MutationObserver to watch for translation changes in sandbox
+        sandbox.appendChild(fragment);
+
+        // 2. Set up debounced/batched MutationObserver to watch for Chrome translation changes in sandbox
+        const pendingSyncIds = new Set();
         this.sandboxObserver = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                // Determine which sandbox element changed
-                let targetNode = mutation.target;
-                // If the target is a text node, get its parent element
-                if (targetNode.nodeType === 3) {
-                    targetNode = targetNode.parentElement;
+            for (let i = 0; i < mutations.length; i++) {
+                let node = mutations[i].target;
+                if (node && node.nodeType === 3) {
+                    node = node.parentElement;
                 }
-                
-                if (targetNode && targetNode.hasAttribute('data-sync-id')) {
-                    const syncId = targetNode.getAttribute('data-sync-id');
+                if (node && typeof node.closest === 'function') {
+                    const syncEl = node.closest('[data-sync-id]');
+                    if (syncEl) {
+                        const id = syncEl.getAttribute('data-sync-id');
+                        if (id !== null) pendingSyncIds.add(id);
+                    }
+                }
+            }
+
+            if (pendingSyncIds.size === 0 || this.sandboxRafId) return;
+
+            this.sandboxRafId = requestAnimationFrame(() => {
+                this.sandboxRafId = null;
+                const savedScrollY = this.getScrollTop();
+                let anyUpdated = false;
+
+                pendingSyncIds.forEach((syncId) => {
+                    const sandboxEl = sandboxElementMap.get(syncId);
                     const iframeEl = elementMap.get(syncId);
-                    if (iframeEl) {
-                        const newText = targetNode.textContent || targetNode.innerText;
-                        // Avoid infinite loops by checking if text actually changed
-                        if (iframeEl.innerText !== newText) {
-                            iframeEl.innerText = newText;
-                            iframeEl.setAttribute('data-is-translated', 'true');
-                        }
+                    if (!sandboxEl || !iframeEl) return;
+
+                    const newText = (sandboxEl.textContent || sandboxEl.innerText || '').trim();
+                    if (!newText) return;
+
+                    const currentText = (iframeEl.textContent || '').trim();
+                    if (currentText !== newText) {
+                        iframeEl.textContent = newText;
+                        iframeEl.setAttribute('data-is-translated', 'true');
+                        anyUpdated = true;
+                    }
+                });
+                pendingSyncIds.clear();
+
+                if (anyUpdated) {
+                    this.scheduleExpandEpubIframe(60);
+                    if (Math.abs(this.getScrollTop() - savedScrollY) > 2) {
+                        this.setScrollTop(savedScrollY);
                     }
                 }
             });
         });
-        
+
         this.sandboxObserver.observe(sandbox, {
             childList: true,
             characterData: true,
             subtree: true
         });
-        
-        console.log(`Synced ${elementMap.size} elements to translation sandbox for Chrome page translate.`);
     },
 
     async translateDocument(doc, targetLang) {
@@ -1696,111 +2138,136 @@ const reader = {
         const cleanTarget = targetLang ? targetLang.toLowerCase() : 'tr';
         const transService = this.settings.translationService || 'web';
 
-        // If document is already translated to the target language by the same service, do nothing
-        if (doc.body && 
-            doc.body.getAttribute('data-translated-to') === cleanTarget && 
-            doc.body.getAttribute('data-translated-by') === transService) {
-            return;
-        }
-
-        const selectors = 'p, h1, h2, h3, h4, h5, h6, li, .textLayer span';
-        const elements = Array.from(doc.querySelectorAll(selectors));
-        
-        const validElements = elements.filter(el => {
-            const txt = el.innerText || el.textContent;
-            return txt && txt.trim().length > 0;
-        });
-
-        if (validElements.length === 0) return;
-
-        // Load cached language or detect it
-        if (!this.detectedLang && this.bookData && this.bookData.detectedLang) {
-            this.detectedLang = this.bookData.detectedLang;
-        }
-
-        if (!this.detectedLang) {
-            // Detect from first few paragraphs
-            const sampleText = validElements.slice(0, 3).map(el => el.innerText || el.textContent).join(' ').trim();
-            if (sampleText.length > 0) {
-                try {
-                    const result = await translateService.translateGoogleWithDetails(sampleText.slice(0, 200), 'tr');
-                    if (result && result.lang) {
-                        this.detectedLang = result.lang.toLowerCase();
-                        console.log("Detected book language:", this.detectedLang);
-                        if (this.bookData) {
-                            this.bookData.detectedLang = this.detectedLang;
-                            await booksDb.saveBook(this.bookData);
-                        }
-                    }
-                } catch (e) {
-                    console.error("Language detection failed:", e);
-                }
+        // If document is already translated or currently translating to the target language by the same service, do nothing
+        if (doc.body) {
+            if (doc.body.getAttribute('data-translated-to') === cleanTarget &&
+                doc.body.getAttribute('data-translated-by') === transService) {
+                return;
             }
+            if (doc.body.getAttribute('data-is-translating') === 'true') {
+                return;
+            }
+            doc.body.setAttribute('data-is-translating', 'true');
         }
 
-        // If target language matches detected original language, restore original text and skip translation
-        const cleanDetected = this.detectedLang ? this.detectedLang.toLowerCase() : 'en';
+        try {
+            const selectors = 'p, h1, h2, h3, h4, h5, h6, li, .textLayer span';
+            const elements = Array.from(doc.querySelectorAll(selectors));
 
-        const isSameLang = cleanDetected === cleanTarget || 
-                           cleanDetected.startsWith(cleanTarget) || 
-                           cleanTarget.startsWith(cleanDetected);
-
-        if (isSameLang) {
-            this.restoreDocument(doc);
-            return;
-        }
-
-        const chunkSize = 15;
-        const promises = [];
-        let successCount = 0;
-
-        for (let i = 0; i < validElements.length; i += chunkSize) {
-            const chunk = validElements.slice(i, i + chunkSize);
-            const textsToTranslate = chunk.map(el => {
-                if (!el.hasAttribute('data-original-text')) {
-                    el.setAttribute('data-original-text', el.innerText || el.textContent);
-                }
-                return el.getAttribute('data-original-text');
+            const validElements = elements.filter(el => {
+                const txt = el.innerText || el.textContent;
+                return txt && txt.trim().length > 0;
             });
 
-            // Push parallel translation promise for each chunk
-            promises.push((async (chunkElements, texts) => {
-                try {
-                    const translatedParts = await this.translateTextsBatch(texts, cleanTarget);
-                    for (let j = 0; j < chunkElements.length; j++) {
-                        if (translatedParts[j]) {
-                            chunkElements[j].innerText = translatedParts[j];
-                            chunkElements[j].setAttribute('data-is-translated', 'true');
-                            successCount++;
+            if (validElements.length === 0) return;
+
+            // Load cached language or detect it
+            if (!this.detectedLang && this.bookData && this.bookData.detectedLang) {
+                this.detectedLang = this.bookData.detectedLang;
+            }
+
+            if (!this.detectedLang) {
+                const sampleText = validElements.slice(0, 3).map(el => el.innerText || el.textContent).join(' ').trim();
+                if (sampleText.length > 0) {
+                    try {
+                        const result = await translateService.translateGoogleWithDetails(sampleText.slice(0, 200), 'tr');
+                        if (result && result.lang) {
+                            this.detectedLang = result.lang.toLowerCase();
+                            if (this.bookData) {
+                                this.bookData.detectedLang = this.detectedLang;
+                                await booksDb.saveBook(this.bookData);
+                            }
                         }
-                    }
-                } catch (err) {
-                    console.error("Batch translate error in parallel chunk:", err);
-                    // Fallback to google translate for each element in the chunk
-                    for (const el of chunkElements) {
-                        try {
-                            const original = el.getAttribute('data-original-text');
-                            const trans = await translateService.translateGoogle(original, cleanTarget);
-                            el.innerText = trans;
-                            el.setAttribute('data-is-translated', 'true');
-                            successCount++;
-                        } catch (e) {
-                            console.error("Fallback translate error:", e);
-                        }
+                    } catch (e) {
+                        console.error("Language detection failed:", e);
                     }
                 }
-            })(chunk, textsToTranslate));
-        }
+            }
 
-        // Wait for all parallel chunks to finish
-        await Promise.all(promises);
+            const cleanDetected = this.detectedLang ? this.detectedLang.toLowerCase() : 'en';
+            const isSameLang = cleanDetected === cleanTarget ||
+                               cleanDetected.startsWith(cleanTarget) ||
+                               cleanTarget.startsWith(cleanDetected);
 
-        // Mark as translated
-        if (doc.body && successCount > 0) {
-            doc.body.setAttribute('data-translated-to', cleanTarget);
-            doc.body.setAttribute('data-translated-by', transService);
+            if (isSameLang) {
+                this.restoreDocument(doc);
+                return;
+            }
+
+            const chunkSize = 15;
+            let successCount = 0;
+            const chunks = [];
+
+            for (let i = 0; i < validElements.length; i += chunkSize) {
+                const chunk = validElements.slice(i, i + chunkSize);
+                const textsToTranslate = chunk.map(el => {
+                    if (!el.hasAttribute('data-original-text')) {
+                        el.setAttribute('data-original-text', el.innerText || el.textContent);
+                    }
+                    return el.getAttribute('data-original-text');
+                });
+                chunks.push({ chunkElements: chunk, texts: textsToTranslate });
+            }
+
+            // Translate in controlled batches of 2 chunks at a time to prevent UI freeze and scroll jumps
+            const concurrency = 2;
+            for (let c = 0; c < chunks.length; c += concurrency) {
+                const batch = chunks.slice(c, c + concurrency);
+                await Promise.all(batch.map(async ({ chunkElements, texts }) => {
+                    try {
+                        const translatedParts = await this.translateTextsBatch(texts, cleanTarget);
+                        const savedScrollY = this.getScrollTop();
+                        for (let j = 0; j < chunkElements.length; j++) {
+                            if (translatedParts[j]) {
+                                chunkElements[j].textContent = translatedParts[j];
+                                chunkElements[j].setAttribute('data-is-translated', 'true');
+                                successCount++;
+                            }
+                        }
+                        if (this.currentBookType === 'epub') {
+                            this.scheduleExpandEpubIframe(60);
+                            if (Math.abs(this.getScrollTop() - savedScrollY) > 2) {
+                                this.setScrollTop(savedScrollY);
+                            }
+                        }
+                    } catch (err) {
+                        console.error("Batch translate error in chunk:", err);
+                        for (const el of chunkElements) {
+                            try {
+                                const original = el.getAttribute('data-original-text');
+                                const trans = await translateService.translateGoogle(original, cleanTarget);
+                                const savedScrollY = this.getScrollTop();
+                                el.textContent = trans;
+                                el.setAttribute('data-is-translated', 'true');
+                                successCount++;
+                                if (Math.abs(this.getScrollTop() - savedScrollY) > 2) {
+                                    this.setScrollTop(savedScrollY);
+                                }
+                            } catch (e) {
+                                console.error("Fallback translate error:", e);
+                            }
+                        }
+                    }
+                }));
+            }
+
+            if (doc.body && successCount > 0) {
+                doc.body.setAttribute('data-translated-to', cleanTarget);
+                doc.body.setAttribute('data-translated-by', transService);
+            }
+            const savedScrollAfter = this.getScrollTop();
+            this.applySpacingFixToDoc(doc);
+            if (this.currentBookType === 'epub') {
+                this.scheduleExpandEpubIframe(60);
+                if (Math.abs(this.getScrollTop() - savedScrollAfter) > 2) {
+                    this.setScrollTop(savedScrollAfter);
+                }
+            }
+        } finally {
+            if (doc.body) {
+                doc.body.removeAttribute('data-is-translating');
+            }
         }
-        this.applySpacingFixToDoc(doc);
     },
 
     async translateTextsBatch(texts, targetLang) {
@@ -1822,16 +2289,24 @@ const reader = {
 
     restoreDocument(doc) {
         if (!doc) return;
+        const savedScrollY = this.getScrollTop();
         const elements = doc.querySelectorAll('[data-original-text]');
         elements.forEach(el => {
-            el.innerText = el.getAttribute('data-original-text');
+            el.textContent = el.getAttribute('data-original-text');
             el.removeAttribute('data-is-translated');
         });
         if (doc.body) {
             doc.body.removeAttribute('data-translated-to');
             doc.body.removeAttribute('data-translated-by');
+            doc.body.removeAttribute('data-is-translating');
         }
         this.applySpacingFixToDoc(doc);
+        if (this.currentBookType === 'epub') {
+            this.scheduleExpandEpubIframe(60);
+            if (Math.abs(this.getScrollTop() - savedScrollY) > 2) {
+                this.setScrollTop(savedScrollY);
+            }
+        }
     },
 
     // Yazı Tipi Değiştirme
@@ -1906,7 +2381,8 @@ const reader = {
                     padding: calc(env(safe-area-inset-top, 30px) + 15px) ${padVal}px 30px !important;
                     width: 100% !important;
                     max-width: 100% !important;
-                    min-height: 100vh !important;
+                    min-height: 0 !important;
+                    height: auto !important;
                     box-sizing: border-box !important;
                     background-color: ${colors.bg} !important;
                     color: ${colors.fg} !important;
@@ -2743,12 +3219,47 @@ const reader = {
     // Okuyucuyu Kapat ve Kütüphaneye Dön
     closeReader(skipHistoryCleanup = false) {
         this.stopTTS();
+
+        // Okuyucu gizlenmeden önce kaldığı konumu kalıcı olarak kaydet (popstate kaynaklı 0 sıfırlamasını koru)
+        this.saveReadingPosition(false);
+        if (this.epubScrollTimeout) clearTimeout(this.epubScrollTimeout);
+        if (this.expandIframeTimeout) {
+            clearTimeout(this.expandIframeTimeout);
+            this.expandIframeTimeout = null;
+        }
+        if (this.sandboxObserver) {
+            this.sandboxObserver.disconnect();
+            this.sandboxObserver = null;
+        }
+        if (this.sandboxRafId) {
+            cancelAnimationFrame(this.sandboxRafId);
+            this.sandboxRafId = null;
+        }
+        if (this.currentBookType === 'epub' && this.currentBookId && this.epubLocation) {
+            const epubPercent = (this.bookData && this.bookData.progressPercent) || 0;
+            booksDb.updateProgress(this.currentBookId, epubPercent, this.epubLocation);
+        }
+        if (this.currentBookType === 'pdf' && this.currentBookId && this.pdfDocument) {
+            if (this.pdfScrollTimeout) clearTimeout(this.pdfScrollTimeout);
+            const rawScrollY = this.getScrollTop();
+            const finalPdfScrollY = (rawScrollY === 0 && (this.lastValidScrollY || 0) > 40)
+                ? Math.round(this.lastValidScrollY)
+                : Math.round(rawScrollY);
+            const pdfLocation = `${this.pdfCurrentPage};${finalPdfScrollY}`;
+            const pdfPercent = Math.round((this.pdfCurrentPage / this.pdfTotalPages) * 100);
+            if (this.bookData) {
+                this.bookData.lastLocation = pdfLocation;
+                this.bookData.progressPercent = pdfPercent;
+            }
+            booksDb.updateProgress(this.currentBookId, pdfPercent, pdfLocation);
+        }
         
         document.getElementById('view-reader').style.display = 'none';
 
         document.documentElement.classList.remove('reader-active');
         document.body.classList.remove('reader-active');
         document.documentElement.style.backgroundColor = '';
+        this.isRestoringBook = false;
         window.scrollTo(0, 0);
         try { sessionStorage.removeItem('endlessr_reader_scroll'); } catch (e) {}
         
@@ -2806,8 +3317,10 @@ let lastScrollY = window.scrollY;
 
 window.addEventListener('scroll', () => {
     if (!document.body.classList.contains('reader-active')) return;
+    if (reader.isRestoringBook) return;
+    if (typeof navHistory !== 'undefined' && navHistory.isNavigatingBack) return;
 
-    const currentScrollY = window.scrollY;
+    const currentScrollY = reader.getScrollTop();
     const header = document.querySelector('.reader-header');
     
     // 1. Header Göster/Gizle mantığı (Aşağı kaydırırken gizle, yukarı kaydırırken göster)
@@ -2825,7 +3338,7 @@ window.addEventListener('scroll', () => {
         try {
             sessionStorage.setItem('endlessr_reader_scroll', JSON.stringify({
                 bookId: reader.currentBookId,
-                spineIndex: reader.lastSpineIndex,
+                spineIndex: reader.getActiveSpineIndex(),
                 pdfPage: reader.pdfCurrentPage,
                 scrollY: currentScrollY
             }));
@@ -2834,8 +3347,24 @@ window.addEventListener('scroll', () => {
 
     // 2. Okuma Konumunu Kaydetme Entegrasyonu
     if (reader.currentBookType === 'epub') {
+        reader.saveReadingPosition(currentScrollY === 0 && lastScrollY <= 50);
         reader.saveEpubScrollLocation();
     } else if (reader.currentBookType === 'pdf') {
+        if (currentScrollY > 0 || lastScrollY <= 50) {
+            reader.lastValidScrollY = currentScrollY;
+        }
         reader.savePdfScrollLocation();
+    }
+});
+
+// Uygulama arka plana alınırken / sekme kapanırken son konumu kaydet
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && document.body.classList.contains('reader-active')) {
+        reader.saveReadingPosition(false);
+    }
+});
+window.addEventListener('pagehide', () => {
+    if (document.body.classList.contains('reader-active')) {
+        reader.saveReadingPosition();
     }
 });
