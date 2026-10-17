@@ -2050,28 +2050,14 @@ const reader = {
         if (!sandbox) {
             sandbox = document.createElement('div');
             sandbox.id = 'translation-sandbox';
-            // Keep sandbox in main document so Chrome translates it, but isolate layout/scroll impact
-            sandbox.style.cssText = 'position: fixed; left: 0; top: 0; width: 300px; height: 1px; opacity: 0.001; pointer-events: none; overflow: hidden; z-index: -9999; contain: strict; user-select: none;';
-            sandbox.setAttribute('aria-hidden', 'true');
+            document.body.appendChild(sandbox);
+        } else if (sandbox.parentElement !== document.body) {
             document.body.appendChild(sandbox);
         }
-
-        // Prevent Chrome's built-in page translator from directly mutating the EPUB iframe DOM at the same time
-        // (all translations flow cleanly through #translation-sandbox -> requestAnimationFrame batch update)
-        try {
-            if (doc.documentElement) {
-                doc.documentElement.setAttribute('translate', 'no');
-                doc.documentElement.classList.add('notranslate');
-            }
-            if (doc.body) {
-                doc.body.setAttribute('translate', 'no');
-                doc.body.classList.add('notranslate');
-            }
-            if (doc.defaultView && doc.defaultView.frameElement) {
-                doc.defaultView.frameElement.setAttribute('translate', 'no');
-                doc.defaultView.frameElement.classList.add('notranslate');
-            }
-        } catch (e) {}
+        // Position off-screen but keep in normal Blink layout (no contain:strict / aria-hidden / opacity:0)
+        // so Chrome's 3-dots page translator extracts and translates all paragraphs in the chapter.
+        sandbox.removeAttribute('aria-hidden');
+        sandbox.style.cssText = 'position: absolute; left: -9999px; top: -9999px; width: 1px; height: 1px; overflow: hidden;';
 
         // Clear previous sandbox contents and stop old observer
         if (this.sandboxObserver) {
@@ -2120,50 +2106,32 @@ const reader = {
         if (elementMap.size === 0) return;
         sandbox.appendChild(fragment);
 
-        // 2. Set up debounced/batched MutationObserver to watch for Chrome translation changes in sandbox
-        const pendingSyncIds = new Set();
-        this.sandboxObserver = new MutationObserver((mutations) => {
-            for (let i = 0; i < mutations.length; i++) {
-                let node = mutations[i].target;
-                if (node && node.nodeType === 3) {
-                    node = node.parentElement;
-                }
-                if (node && typeof node.closest === 'function') {
-                    const syncEl = node.closest('[data-sync-id]');
-                    if (syncEl) {
-                        const id = syncEl.getAttribute('data-sync-id');
-                        if (id !== null) pendingSyncIds.add(id);
-                    }
-                }
-            }
-
-            if (pendingSyncIds.size === 0 || this.sandboxRafId) return;
+        // 2. Set up MutationObserver to watch for Chrome translation changes in sandbox
+        this.sandboxObserver = new MutationObserver(() => {
+            if (this.sandboxRafId) return;
 
             this.sandboxRafId = requestAnimationFrame(() => {
                 this.sandboxRafId = null;
                 const savedScrollY = this.getScrollTop();
                 let anyUpdated = false;
 
-                pendingSyncIds.forEach((syncId) => {
-                    const sandboxEl = sandboxElementMap.get(syncId);
+                sandboxElementMap.forEach((sandboxEl, syncId) => {
                     const iframeEl = elementMap.get(syncId);
                     if (!sandboxEl || !iframeEl) return;
 
-                    const newText = (sandboxEl.textContent || sandboxEl.innerText || '').trim();
-                    if (!newText) return;
+                    const newText = sandboxEl.textContent || sandboxEl.innerText;
+                    if (!newText || !newText.trim()) return;
 
-                    const currentText = (iframeEl.textContent || '').trim();
-                    if (currentText !== newText) {
-                        iframeEl.textContent = newText;
+                    if (iframeEl.innerText !== newText) {
+                        iframeEl.innerText = newText;
                         iframeEl.setAttribute('data-is-translated', 'true');
                         anyUpdated = true;
                     }
                 });
-                pendingSyncIds.clear();
 
                 if (anyUpdated) {
                     this.scheduleExpandEpubIframe(60);
-                    if (Math.abs(this.getScrollTop() - savedScrollY) > 2) {
+                    if (savedScrollY > 0 && Math.abs(this.getScrollTop() - savedScrollY) > 2) {
                         this.setScrollTop(savedScrollY);
                     }
                 }
@@ -3358,6 +3326,7 @@ const reader = {
 
 // Global Window Scroll Listener (Chrome Adres Çubuğu & Reader Header Gizleme/Gösterme Entegrasyonu)
 let lastScrollY = window.scrollY;
+let upScrollAnchorY = window.scrollY;
 
 window.addEventListener('scroll', () => {
     if (!document.body.classList.contains('reader-active')) return;
@@ -3366,14 +3335,31 @@ window.addEventListener('scroll', () => {
 
     const currentScrollY = reader.getScrollTop();
     const header = document.querySelector('.reader-header');
+    const optionsPanel = document.getElementById('reader-options-panel');
+    const isPanelOpen = optionsPanel && optionsPanel.classList.contains('open');
     
-    // 1. Header Göster/Gizle mantığı (Aşağı kaydırırken gizle, yukarı kaydırırken göster)
-    if (header) {
-        if (currentScrollY > lastScrollY && currentScrollY > 80) {
-            header.classList.remove('open');
+    // 1. Header Göster/Gizle mantığı:
+    // Aşağı kaydırırken gizle ve yukarı kaydırma başlangıç noktasını (upScrollAnchorY) güncelle.
+    // Yukarı kaydırırken ufak dokunuşlarda hemen açma; yalnızca ekran yüksekliğinin en az 3'te 1'i (1/3)
+    // kadar yukarı kaydırıldığında üst barı (.reader-header) aç.
+    if (header && !isPanelOpen) {
+        if (currentScrollY > lastScrollY) {
+            upScrollAnchorY = currentScrollY;
+            if (currentScrollY > 80) {
+                header.classList.remove('open');
+            }
         } else if (currentScrollY < lastScrollY) {
-            header.classList.add('open');
+            if (currentScrollY > upScrollAnchorY) {
+                upScrollAnchorY = currentScrollY;
+            }
+            const oneThirdScreen = Math.max(120, Math.round((window.innerHeight || 600) / 3));
+            const upScrolledDistance = upScrollAnchorY - currentScrollY;
+            if (upScrolledDistance >= oneThirdScreen) {
+                header.classList.add('open');
+            }
         }
+    } else if (currentScrollY > lastScrollY) {
+        upScrollAnchorY = currentScrollY;
     }
     lastScrollY = currentScrollY;
 
