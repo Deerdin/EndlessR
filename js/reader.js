@@ -81,32 +81,47 @@ const reader = {
         return null;
     },
 
-    // EPUB iframe yüksekliğini kaydırma konumunu (scrollY) bozmadan ve epub.js reframe döngüsünü tetiklemeden günceller
+    // EPUB iframe genişlik ve yüksekliğini kaydırma konumunu (scrollY) bozmadan günceller
     expandEpubIframePreservingScroll() {
         if (this.currentBookType !== 'epub' || !this.epubRendition || this.settings.readerType === 'old') return;
         const savedScrollY = this.getScrollTop();
         try {
+            const viewerEl = document.getElementById('epub-viewer');
+            const fallbackWidth = (viewerEl && viewerEl.clientWidth > 0) ? viewerEl.clientWidth : window.innerWidth;
             const mgr = this.epubRendition.manager;
             if (mgr && mgr.views && Array.isArray(mgr.views._views)) {
+                const stageWidth = (mgr.stage && mgr.stage.container && mgr.stage.container.clientWidth > 0)
+                    ? mgr.stage.container.clientWidth
+                    : fallbackWidth;
                 mgr.views._views.forEach(view => {
-                    if (view && view.iframe && view.document && view.document.body) {
-                        const body = view.document.body;
-                        const docEl = view.document.documentElement;
-                        let newHeight = Math.max(
-                            body.scrollHeight || 0,
-                            body.offsetHeight || 0,
-                            docEl ? (docEl.offsetHeight || 0) : 0
-                        );
-                        if (view.contents && typeof view.contents.textHeight === 'function') {
-                            try {
-                                const th = view.contents.textHeight();
-                                if (th > newHeight) newHeight = th;
-                            } catch (e) {}
+                    if (view && view.iframe) {
+                        const widthCss = stageWidth > 0 ? (stageWidth + 'px') : '100%';
+                        if (view.element) {
+                            view.element.style.width = widthCss;
                         }
-                        if (newHeight > 0 && Math.abs((view._height || 0) - newHeight) > 4) {
-                            view._height = newHeight;
-                            if (view.element) view.element.style.height = newHeight + 'px';
-                            view.iframe.style.height = newHeight + 'px';
+                        view.iframe.style.width = widthCss;
+                        view._width = stageWidth;
+
+                        if (view.document && view.document.body) {
+                            const body = view.document.body;
+                            const docEl = view.document.documentElement;
+                            let newHeight = Math.max(
+                                window.innerHeight || 0,
+                                body.scrollHeight || 0,
+                                body.offsetHeight || 0,
+                                docEl ? (docEl.offsetHeight || 0) : 0
+                            );
+                            if (view.contents && typeof view.contents.textHeight === 'function') {
+                                try {
+                                    const th = view.contents.textHeight();
+                                    if (th > newHeight) newHeight = th;
+                                } catch (e) {}
+                            }
+                            if (newHeight > 0 && Math.abs((view._height || 0) - newHeight) > 4) {
+                                view._height = newHeight;
+                                if (view.element) view.element.style.height = newHeight + 'px';
+                                view.iframe.style.height = newHeight + 'px';
+                            }
                         }
                     }
                 });
@@ -393,17 +408,6 @@ const reader = {
                 this.scheduleExpandEpubIframe(80);
             };
 
-            // updateLayout'un her konum sorgusunda setLayout -> layout.format -> scrollTo(0,0) tetiklemesini engelle
-            if (typeof mgr.updateLayout === 'function') {
-                mgr.updateLayout = () => {
-                    if (!mgr.stage || !mgr.layout) return;
-                    mgr._stageSize = mgr.stage.size();
-                    mgr.layout.calculate(mgr._stageSize.width, mgr._stageSize.height);
-                    mgr.viewSettings.width = mgr.layout.width;
-                    mgr.viewSettings.height = mgr.layout.height;
-                };
-            }
-
             mgr.__endlessrResizePatched = true;
         };
 
@@ -668,13 +672,41 @@ const reader = {
 
     // 2. EPUB Okuyucu Başlatıcı
     async initEpub(fileBuffer, startLocation) {
-        document.getElementById('epub-viewer').style.display = 'block';
+        const epubViewerEl = document.getElementById('epub-viewer');
+        epubViewerEl.style.display = 'block';
         document.getElementById('btn-prev-page').style.display = 'none';
         document.getElementById('btn-next-page').style.display = 'none';
 
-        // Eski kitap nesnesi varsa yok et
+        // Eski kitap nesnesi varsa yok et ve kapsayıcıyı temizle
         if (this.epubBook) {
             try { this.epubBook.destroy(); } catch (e) {}
+        }
+        epubViewerEl.innerHTML = '';
+
+        // Iframe dışı (boş alan) tıklamalarında da alt menü panelinin açılıp kapanmasını sağla
+        if (!epubViewerEl.__endlessrClickBound) {
+            epubViewerEl.addEventListener('click', (e) => {
+                if (e.target && e.target.tagName === 'IFRAME') return;
+                const popover = document.getElementById('translate-popover');
+                if (popover && popover.style.display === 'flex') {
+                    this.hidePopover();
+                    return;
+                }
+                const tocPanel = document.getElementById('toc-panel');
+                if (tocPanel && tocPanel.classList.contains('open')) {
+                    this.closeTOCPanel();
+                    return;
+                }
+                const panel = document.getElementById('reader-options-panel');
+                if (panel) {
+                    if (panel.classList.contains('open')) {
+                        this.closeStylePanel();
+                    } else {
+                        this.openStylePanel();
+                    }
+                }
+            });
+            epubViewerEl.__endlessrClickBound = true;
         }
 
         // EpubJS yükleme
@@ -890,36 +922,45 @@ const reader = {
                     this.lastSpineIndex = contents.sectionIndex;
                 }
 
-                // Kaydırmalı modda epub.js'in dahili ResizeObserver / viewport sıfırlama döngüsünü devre dışı bırak
+                // Pencere boyut değişiminde yıkıcı clear/display döngüsünü engelle
                 this.patchEpubResizeHandling();
                 if (rType !== "old") {
-                    if (contents.observer && typeof contents.observer.disconnect === 'function') {
-                        contents.observer.disconnect();
-                    }
-                    if (contents.expanding) {
-                        clearTimeout(contents.expanding);
-                    }
-                    if (contents._resizeCheck && doc) {
-                        doc.removeEventListener('transitionend', contents._resizeCheck);
-                    }
-                    contents.size = () => {};
-                    contents.viewport = () => ({});
-                    contents.resizeCheck = () => {
-                        this.scheduleExpandEpubIframe(100);
-                    };
-
                     if (this.epubRendition && this.epubRendition.manager && this.epubRendition.manager.views) {
                         const views = this.epubRendition.manager.views._views;
                         if (Array.isArray(views)) {
                             views.forEach(v => {
-                                if (v) {
-                                    v.expand = () => {
+                                if (v && !v.__endlessrExpandWrapped && typeof v.expand === 'function') {
+                                    const origExpand = v.expand.bind(v);
+                                    v.expand = (floating) => {
+                                        const savedScrollY = this.getScrollTop();
+                                        try {
+                                            origExpand(floating);
+                                        } catch (e) {}
                                         this.expandEpubIframePreservingScroll();
+                                        if (savedScrollY > 0 && Math.abs(this.getScrollTop() - savedScrollY) > 2) {
+                                            this.setScrollTop(savedScrollY);
+                                        }
                                     };
+                                    v.__endlessrExpandWrapped = true;
                                 }
                             });
                         }
                     }
+
+                    // İlk render tamamlandıktan sonra epub.js'in dahili ResizeObserver tetiklemelerini
+                    // kaydırma konumunu koruyan expand fonksiyonumuza yönlendir
+                    setTimeout(() => {
+                        if (contents.observer && typeof contents.observer.disconnect === 'function') {
+                            contents.observer.disconnect();
+                        }
+                        if (contents.expanding) {
+                            clearTimeout(contents.expanding);
+                        }
+                        contents.resizeCheck = () => {
+                            this.scheduleExpandEpubIframe(100);
+                        };
+                        this.expandEpubIframePreservingScroll();
+                    }, 300);
                 }
                 
                 // Metin değişikliklerini (find-replace) uygula
@@ -1010,9 +1051,8 @@ const reader = {
                 }
 
                 if (rType !== "old") {
-                    this.scheduleExpandEpubIframe(30);
-                    setTimeout(() => { this.expandEpubIframePreservingScroll(); }, 180);
-                    setTimeout(() => { this.expandEpubIframePreservingScroll(); }, 500);
+                    setTimeout(() => { this.expandEpubIframePreservingScroll(); }, 60);
+                    setTimeout(() => { this.expandEpubIframePreservingScroll(); }, 250);
                 }
                 
             } catch (err) {
@@ -1147,7 +1187,12 @@ const reader = {
 
         // Kitabı render et (Tüm olay dinleyicileri ve kancalar kaydedildikten sonra)
         if (startLocation) {
-            await this.epubRendition.display(startLocation);
+            try {
+                await this.epubRendition.display(startLocation);
+            } catch (displayErr) {
+                console.warn("Kayıtlı başlangıç konumu açılamadı, baştan açılıyor:", displayErr);
+                await this.epubRendition.display();
+            }
         } else {
             await this.epubRendition.display();
         }
@@ -2381,8 +2426,7 @@ const reader = {
                     padding: calc(env(safe-area-inset-top, 30px) + 15px) ${padVal}px 30px !important;
                     width: 100% !important;
                     max-width: 100% !important;
-                    min-height: 0 !important;
-                    height: auto !important;
+                    min-height: 100vh !important;
                     box-sizing: border-box !important;
                     background-color: ${colors.bg} !important;
                     color: ${colors.fg} !important;
