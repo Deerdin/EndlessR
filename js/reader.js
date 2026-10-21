@@ -438,6 +438,7 @@ const reader = {
         tapToTranslate: false,
         padding: 8,
         fixSpacing: false,
+        smartReformat: false,
         readerType: "single",
         translationService: "web",
         autoUnlock: false
@@ -535,6 +536,7 @@ const reader = {
             this.settings.tapToTranslate = await settingsDb.get('readerTapToTranslate', false);
             this.settings.padding = await settingsDb.get('readerPadding', 8);
             this.settings.fixSpacing = await settingsDb.get('readerFixSpacing', false);
+            this.settings.smartReformat = await settingsDb.get('readerSmartReformat', false);
             this.settings.readerType = await settingsDb.get('readerType', 'single');
             this.settings.translationService = await settingsDb.get('readerTranslationService', 'none');
             this.settings.autoUnlock = await settingsDb.get('readerAutoUnlock', false);
@@ -553,6 +555,7 @@ const reader = {
             document.getElementById('lineheight-val').textContent = this.settings.lineHeight;
             document.getElementById('padding-val').textContent = this.settings.padding + 'px';
             this.updateFixSpacingUI();
+            this.updateSmartReformatUI();
 
             // Yazı tipi butonlarının aktiflik durumunu senkronize et
             document.querySelectorAll('.font-family-btn').forEach(btn => {
@@ -1040,6 +1043,7 @@ const reader = {
 
                     // Add an explicit spacer block to guarantee bottom separation and avoid parent padding collapsing
                     const spacer = doc.createElement('div');
+                    spacer.className = 'epub-chapter-spacer';
                     spacer.style.height = '80px';
                     body.appendChild(spacer);
                 }
@@ -2471,7 +2475,7 @@ const reader = {
         if (this.settings.fixSpacing) {
             css += `
                 /* Manuel Boşluk Düzeltme: İki yana yaslama kaynaklı kelime arası boşlukları kaldır */
-                p, li, blockquote, div:not(.epub-chapter-footer) {
+                p, li, blockquote, div:not(.epub-chapter-footer):not(.epub-chapter-spacer) {
                     text-align: left !important;
                     word-spacing: normal !important;
                     letter-spacing: normal !important;
@@ -2481,8 +2485,645 @@ const reader = {
                 }
             `;
         }
+        if (this.settings.smartReformat) {
+            css += `
+                /* Akıllı Sayfa Biçimlendirme (Prototip Sayfa Düzeni) */
+                body.endlessr-reformatted-body p,
+                body.endlessr-reformatted-body li,
+                body.endlessr-reformatted-body blockquote,
+                body.endlessr-reformatted-body div:not(.epub-chapter-footer):not(.epub-chapter-spacer) {
+                    text-align: left !important;
+                    word-spacing: normal !important;
+                    letter-spacing: normal !important;
+                }
+                body.endlessr-reformatted-body .endlessr-main-title {
+                    text-align: center !important;
+                    font-weight: 700 !important;
+                    font-size: 1.35em !important;
+                    line-height: 1.35 !important;
+                    margin: 0.6em auto 1.15em auto !important;
+                    text-indent: 0 !important;
+                    display: block !important;
+                }
+                body.endlessr-reformatted-body .endlessr-sub-title {
+                    text-align: left !important;
+                    font-weight: 600 !important;
+                    font-size: 1.12em !important;
+                    line-height: 1.4 !important;
+                    margin: 0.2em 0 1.1em 0 !important;
+                    text-indent: 0 !important;
+                    display: block !important;
+                }
+                body.endlessr-reformatted-body .endlessr-epigraph {
+                    text-align: left !important;
+                    text-indent: 1.5em !important;
+                    margin: 0 0 1.25em 0 !important;
+                    padding: 0 !important;
+                    border: none !important;
+                    display: block !important;
+                }
+                body.endlessr-reformatted-body .endlessr-narrative-p {
+                    text-align: left !important;
+                    text-indent: 1.5em !important;
+                    margin: 0 0 1.05em 0 !important;
+                    padding: 0 !important;
+                    display: block !important;
+                }
+                body.endlessr-reformatted-body .endlessr-narrative-p i,
+                body.endlessr-reformatted-body .endlessr-narrative-p em,
+                body.endlessr-reformatted-body .endlessr-narrative-p b,
+                body.endlessr-reformatted-body .endlessr-narrative-p strong,
+                body.endlessr-reformatted-body .endlessr-narrative-p span,
+                body.endlessr-reformatted-body .endlessr-epigraph i,
+                body.endlessr-reformatted-body .endlessr-epigraph em,
+                body.endlessr-reformatted-body .endlessr-epigraph b,
+                body.endlessr-reformatted-body .endlessr-epigraph strong,
+                body.endlessr-reformatted-body .endlessr-epigraph span {
+                    display: inline !important;
+                    font-size: inherit !important;
+                    line-height: inherit !important;
+                    font-family: inherit !important;
+                    vertical-align: baseline !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                }
+                body.endlessr-reformatted-body .endlessr-stat-block {
+                    text-align: left !important;
+                    text-indent: 0 !important;
+                    margin: 1.2em 0 !important;
+                    padding: 0 !important;
+                    display: block !important;
+                }
+                body.endlessr-reformatted-body .endlessr-stat-line {
+                    text-align: left !important;
+                    text-indent: 0 !important;
+                    margin: 0.16em 0 !important;
+                    padding: 0 !important;
+                    display: block !important;
+                }
+            `;
+        }
         customStyle.textContent = css;
+        this.applySmartReformatToDoc(doc);
         this.applySpacingFixToDoc(doc);
+    },
+
+    // Sayfa Biçimlendirme Butonu Arayüzünü Güncelleme
+    updateSmartReformatUI() {
+        const btn = document.getElementById('btn-smart-reformat');
+        const label = document.getElementById('smart-reformat-label');
+        if (!btn || !label) return;
+
+        if (this.settings.smartReformat) {
+            label.textContent = 'Açık';
+            btn.style.borderColor = 'var(--accent-color)';
+            btn.style.backgroundColor = 'rgba(99, 102, 241, 0.12)';
+            btn.style.color = 'var(--accent-color)';
+        } else {
+            label.textContent = 'Kapalı';
+            btn.style.borderColor = '';
+            btn.style.backgroundColor = '';
+            btn.style.color = '';
+        }
+    },
+
+    // Sayfa Biçimlendirme Ayarını Açma / Kapatma
+    async toggleSmartReformat() {
+        this.settings.smartReformat = !this.settings.smartReformat;
+        await settingsDb.set('readerSmartReformat', this.settings.smartReformat);
+        this.updateSmartReformatUI();
+
+        if (this.currentBookType === 'epub') {
+            const savedScrollY = this.getScrollTop();
+            this.applyEpubStyles();
+            const iframes = document.querySelectorAll("#epub-viewer iframe");
+            iframes.forEach(iframe => {
+                if (iframe && iframe.contentDocument) {
+                    this.syncToTranslationSandbox(iframe.contentDocument);
+                }
+            });
+            this.scheduleExpandEpubIframe(60);
+            if (savedScrollY > 0) {
+                setTimeout(() => this.setScrollTop(savedScrollY), 40);
+            }
+        }
+    },
+
+    // HTML içerisindeki inline etiketleri (<i>, <em>, <b>, <strong>, <span>) koruyarak cümlelere ayırır
+    extractSentencesWithHtml(containerNode) {
+        const sentences = [[]];
+        const abbrRegex = /\b(?:Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr|vs|vb|orn|bkz|No|Vol|Ch|Pt|Fig|Inc|Ltd)\.\s*$/i;
+
+        const pushHtmlToCurrent = (htmlStr) => {
+            if (!htmlStr) return;
+            sentences[sentences.length - 1].push(htmlStr);
+        };
+        const finishSentence = () => {
+            if (sentences[sentences.length - 1].length > 0) {
+                sentences.push([]);
+            }
+        };
+        const escapeHtml = (str) => str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        const processText = (text, wrapperStart = '', wrapperEnd = '') => {
+            const regex = /[^.!?…]+(?:[.!?…]+["”'’)\]]*\s*|$)/g;
+            const matches = text.match(regex) || [text];
+            for (let i = 0; i < matches.length; i++) {
+                const piece = matches[i];
+                if (!piece) continue;
+                pushHtmlToCurrent(wrapperStart + escapeHtml(piece) + wrapperEnd);
+                const trimmed = piece.trim();
+                const endsWithPunct = /[.!?…]["”'’)\]]*$/.test(trimmed);
+                const isAbbr = abbrRegex.test(trimmed) || /\b[A-ZÇĞİÖŞÜ]\.$/.test(trimmed);
+                if (endsWithPunct && !isAbbr) {
+                    finishSentence();
+                }
+            }
+        };
+
+        const sanitizeInlineNode = (el) => {
+            const clone = el.cloneNode(true);
+            const cleanStyles = (node) => {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    if (node.hasAttribute('style')) {
+                        node.style.fontSize = '';
+                        node.style.lineHeight = '';
+                        node.style.fontFamily = '';
+                        node.style.display = '';
+                        node.style.margin = '';
+                        node.style.padding = '';
+                        node.style.textIndent = '';
+                        if (!node.getAttribute('style').trim()) {
+                            node.removeAttribute('style');
+                        }
+                    }
+                    Array.from(node.children).forEach(cleanStyles);
+                }
+            };
+            cleanStyles(clone);
+            return clone;
+        };
+
+        const walk = (node) => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                processText(node.nodeValue || '');
+            } else if (node.nodeType === Node.ELEMENT_NODE) {
+                const tag = node.tagName.toLowerCase();
+                if (tag === 'br') {
+                    finishSentence();
+                    return;
+                }
+                const txt = (node.textContent || '').trim();
+                if (!txt) return;
+                const cleanEl = sanitizeInlineNode(node);
+                const innerMatches = txt.match(/[.!?…]+["”'’)\]]*(?=\s|$)/g);
+                if (!innerMatches || innerMatches.length <= 1) {
+                    pushHtmlToCurrent(cleanEl.outerHTML);
+                    const endsWithPunct = /[.!?…]["”'’)\]]*$/.test(txt);
+                    const isAbbr = abbrRegex.test(txt);
+                    if (endsWithPunct && !isAbbr) {
+                        finishSentence();
+                    }
+                } else {
+                    const openTag = `<${tag}${cleanEl.className ? ` class="${cleanEl.className}"` : ''}>`;
+                    const closeTag = `</${tag}>`;
+                    processText(cleanEl.textContent || '', openTag, closeTag);
+                }
+            }
+        };
+
+        Array.from(containerNode.childNodes).forEach(walk);
+        return sentences
+            .map(tokens => tokens.join('').trim())
+            .filter(s => s.length > 0);
+    },
+
+    // Prototip Sayfa Düzenine Göre Kitap Sayfasını Akıllı Yeniden Biçimlendirme
+    applySmartReformatToDoc(doc) {
+        if (!doc || !doc.body) return;
+        const body = doc.body;
+
+        // 1. Ayar kapalıysa ve daha önce biçimlendirilmişse orijinal DOM'u geri yükle
+        if (!this.settings.smartReformat) {
+            if (body.getAttribute('data-smart-reformatted') === 'true' && body.__endlessrOrigHtml !== undefined) {
+                const footer = body.querySelector('.epub-chapter-footer');
+                const spacer = body.querySelector('.epub-chapter-spacer');
+                if (footer) footer.remove();
+                if (spacer) spacer.remove();
+
+                body.innerHTML = body.__endlessrOrigHtml;
+                body.classList.remove('endlessr-reformatted-body');
+                body.removeAttribute('data-smart-reformatted');
+
+                if (footer) body.appendChild(footer);
+                if (spacer) body.appendChild(spacer);
+            }
+            return;
+        }
+
+        // Zaten biçimlendirilmişse tekrar işleme
+        if (body.getAttribute('data-smart-reformatted') === 'true') {
+            body.classList.add('endlessr-reformatted-body');
+            return;
+        }
+
+        // Bölüm sonu butonlarını ve boşluk elemanını geçici olarak ayır
+        const footer = body.querySelector('.epub-chapter-footer');
+        const spacer = body.querySelector('.epub-chapter-spacer');
+        if (footer) footer.remove();
+        if (spacer) spacer.remove();
+
+        // Orijinal HTML'i kaydet
+        if (body.__endlessrOrigHtml === undefined) {
+            body.__endlessrOrigHtml = body.innerHTML;
+        }
+
+        // İçindekiler (TOC) sayfası olup olmadığını kontrol et (TOC sayfalarını bozma)
+        const tocNav = body.querySelector('nav[epub\\:type="toc"], nav#toc, .toc');
+        const allLinks = Array.from(body.querySelectorAll('a[href]'));
+        const internalLinks = allLinks.filter(a => {
+            const href = (a.getAttribute('href') || '').trim();
+            return href && !/^(https?:\/\/|www\.|mailto:|tel:|discord\.gg)/i.test(href);
+        });
+        const bodyPlainText = (body.innerText || body.textContent || '').trim();
+        const internalLinkTextLen = internalLinks.reduce((acc, a) => acc + ((a.innerText || a.textContent || '').trim().length), 0);
+        if (tocNav || (internalLinks.length >= 8 && bodyPlainText.length > 0 && internalLinkTextLen / bodyPlainText.length > 0.55)) {
+            if (footer) body.appendChild(footer);
+            if (spacer) body.appendChild(spacer);
+            return;
+        }
+
+        // Çalışma kopyası oluştur
+        const workRoot = doc.createElement('div');
+        workRoot.innerHTML = body.__endlessrOrigHtml;
+
+        // A. Reklam / Kaynak Site / Harici Linkleri Temizle (İçindekiler / Bölüm İçi Linkler Hariç)
+        const externalUrlRegex = /(?:https?:\/\/\S+|www\.\S+|\b(?:discord\.gg|patreon\.com|ko-fi\.com|bit\.ly|t\.me)\/\S+|\b[a-z0-9-]+\.(?:com|net|org|xyz|io|me|co|site|online|info|club)\b(?:\/\S*)?)/gi;
+        const promoTextRegex = /(?:read\s+(?:first|latest|more|free)\s+(?:chapters?\s+)?(?:at|on)|visit\s+our\s+(?:website|site)|translated\s+by|join\s+our\s+discord|support\s+us\s+on\s+patreon|bu\s+bölüm\s+.*?\s+tarafından\s+çevrilmiştir|daha\s+fazla\s+bölüm\s+için)/i;
+
+        Array.from(workRoot.querySelectorAll('a')).forEach(a => {
+            const href = (a.getAttribute('href') || '').trim();
+            const txt = (a.innerText || a.textContent || '').trim();
+            const isExternalHref = /^(https?:\/\/|www\.|mailto:)/i.test(href) || externalUrlRegex.test(href);
+            externalUrlRegex.lastIndex = 0;
+            const isExternalText = externalUrlRegex.test(txt);
+            externalUrlRegex.lastIndex = 0;
+
+            if (isExternalHref || isExternalText) {
+                // Eğer linkin metni sadece bir URL veya reklam metni ise tamamen kaldır
+                const stripped = txt.replace(externalUrlRegex, '').trim();
+                externalUrlRegex.lastIndex = 0;
+                if (!stripped || promoTextRegex.test(txt)) {
+                    a.remove();
+                } else {
+                    // Normal bir kelimenin üzerine reklam linki konmuşsa linki kaldırıp metni koru
+                    const textNode = doc.createTextNode(stripped);
+                    a.replaceWith(textNode);
+                }
+            }
+        });
+
+        // B. Yaprak Blokları Sırasıyla Çıkar
+        const leafBlocks = [];
+        const blockTags = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'li', 'hr', 'table', 'figure', 'svg', 'img']);
+        const containerTags = new Set(['div', 'section', 'article', 'main', 'header', 'footer', 'aside', 'ul', 'ol']);
+
+        const collectBlocks = (parent) => {
+            Array.from(parent.childNodes).forEach(node => {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const txt = (node.nodeValue || '').trim();
+                    if (txt) {
+                        const p = doc.createElement('p');
+                        p.textContent = txt;
+                        leafBlocks.push(p);
+                    }
+                    return;
+                }
+                if (node.nodeType !== Node.ELEMENT_NODE) return;
+                const tag = node.tagName.toLowerCase();
+                if (tag === 'script' || tag === 'style' || tag === 'noscript') return;
+
+                if (tag === 'img' || tag === 'svg' || tag === 'hr' || tag === 'table' || tag === 'figure') {
+                    leafBlocks.push(node.cloneNode(true));
+                    return;
+                }
+
+                if (tag === 'blockquote') {
+                    leafBlocks.push(node.cloneNode(true));
+                    return;
+                }
+
+                const hasChildBlocks = Array.from(node.children).some(ch => {
+                    const chTag = ch.tagName.toLowerCase();
+                    return blockTags.has(chTag) || containerTags.has(chTag);
+                });
+
+                if (!hasChildBlocks || /^h[1-6]$/.test(tag) || tag === 'p' || tag === 'li' || tag === 'pre') {
+                    leafBlocks.push(node.cloneNode(true));
+                } else {
+                    collectBlocks(node);
+                }
+            });
+        };
+
+        collectBlocks(workRoot);
+        if (leafBlocks.length === 0) {
+            if (footer) body.appendChild(footer);
+            if (spacer) body.appendChild(spacer);
+            return;
+        }
+
+        // Yardımcı Sınıflandırıcılar
+        const isPureMediaBlock = (el) => {
+            const tag = el.tagName.toLowerCase();
+            if (tag === 'img' || tag === 'svg' || tag === 'hr' || tag === 'table' || tag === 'figure') return true;
+            if (el.querySelector('img, svg') && (el.innerText || el.textContent || '').trim().length === 0) return true;
+            return false;
+        };
+
+        const isMostlyStyledInline = (el) => {
+            const txt = (el.innerText || el.textContent || '').trim();
+            if (!txt) return false;
+            const styledNodes = el.querySelectorAll('i, em, b, strong');
+            let styledLen = 0;
+            styledNodes.forEach(sn => {
+                // İç içe geçmiş i/b etiketlerini çift saymamak için yalnızca en üst eşleşmeyi topla
+                if (!sn.parentElement || !sn.parentElement.closest('i, em, b, strong')) {
+                    styledLen += ((sn.innerText || sn.textContent || '').trim().length);
+                }
+            });
+            return styledLen >= txt.length * 0.72;
+        };
+
+        const isStatOrSystemLineText = (text) => {
+            const t = (text || '').trim();
+            if (!t || t.length > 140) return false;
+            // "GÜÇ: 14 falan filan", "CAN: 23", "Adı: ...", "Seviye: 5" gibi KEY: Value satırları
+            if (/^[A-ZÇĞİÖŞÜa-zçğıöşü0-9\s/()\-_]{1,32}:\s*.+$/.test(t) && !/^(?:not|dipnot|örnek|açıklama|uyarı|ipucu|hatırlatma)\s*:/i.test(t)) {
+                return true;
+            }
+            // [Sistem Bildirimi], <Yetkinlik ...>, 【...】
+            if (/^(?:\[[^[\]]+\]|<[^<>]+>|【[^【】]+】|\{[^}]+\})$/.test(t)) {
+                return true;
+            }
+            return false;
+        };
+
+        const isShortSpecialOrStatBlock = (el, prevWasStat = false) => {
+            if (!el || isPureMediaBlock(el)) return false;
+            const txt = (el.innerText || el.textContent || '').trim();
+            if (!txt) return false;
+
+            // <br> ile ayrılmış çoklu kısa satırlar (ör. statü ekranı veya şiir/sistem bloğu)
+            if (el.querySelector('br')) {
+                const lines = txt.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+                if (lines.length >= 2 && lines.every(l => l.length <= 125)) {
+                    return true;
+                }
+            }
+
+            if (isStatOrSystemLineText(txt)) return true;
+
+            // Tamamı italik veya kalın olan kısa satırlar (veya bir statü satırının hemen altındaki italik açıklama satırı)
+            if (isMostlyStyledInline(el)) {
+                if (txt.length <= 95) return true;
+                if (prevWasStat && txt.length <= 165) return true;
+            }
+
+            return false;
+        };
+
+        const isHeadingCandidate = (el, idx) => {
+            if (!el || isPureMediaBlock(el)) return false;
+            const tag = el.tagName.toLowerCase();
+            const txt = (el.innerText || el.textContent || '').trim();
+            if (!txt || txt.length > 130) return false;
+            if (/^h[1-6]$/.test(tag)) return true;
+            if (idx <= 2) {
+                if (/^(?:chapter|bölüm|kısım|cilt|part|volume|vol\.?|prologue|epilogue|prolog|epilog|giriş|önsöz)\b/i.test(txt)) {
+                    return true;
+                }
+                if (txt.length <= 85 && !/[.!?]$/.test(txt) && !isStatOrSystemLineText(txt)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        const isEpigraphCandidate = (el) => {
+            if (!el || isPureMediaBlock(el)) return false;
+            const tag = el.tagName.toLowerCase();
+            const txt = (el.innerText || el.textContent || '').trim();
+            if (!txt || txt.length > 650) return false;
+            if (isStatOrSystemLineText(txt)) return false;
+            if (tag === 'blockquote') return true;
+            if (isMostlyStyledInline(el) && txt.length >= 20) return true;
+            if (/^["“'‘«].*["”'’»](?:\s*[-–—~]\s*.+)?$/.test(txt)) return true;
+            return false;
+        };
+
+        // C. Blokları Filtrele (Reklam/Watermark Satırlarını Ayıkla)
+        const cleanBlocks = [];
+        for (let i = 0; i < leafBlocks.length; i++) {
+            const el = leafBlocks[i];
+            if (isPureMediaBlock(el)) {
+                cleanBlocks.push(el);
+                continue;
+            }
+            let txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!txt) continue;
+
+            // Tamamen URL veya site reklamından oluşan satırları atla
+            if (txt.length < 180 && (externalUrlRegex.test(txt) || promoTextRegex.test(txt))) {
+                externalUrlRegex.lastIndex = 0;
+                const stripped = txt.replace(externalUrlRegex, '').trim();
+                externalUrlRegex.lastIndex = 0;
+                if (!stripped || promoTextRegex.test(txt)) {
+                    continue;
+                }
+            }
+            externalUrlRegex.lastIndex = 0;
+            cleanBlocks.push(el);
+        }
+
+        if (cleanBlocks.length === 0) {
+            if (footer) body.appendChild(footer);
+            if (spacer) body.appendChild(spacer);
+            return;
+        }
+
+        // D. Yeni Biçimlendirilmiş DOM'u İnşa Et
+        const newFragment = doc.createDocumentFragment();
+        let cursor = 0;
+
+        // Başlangıçtaki kapak/bölüm görsellerini koru
+        while (cursor < cleanBlocks.length && isPureMediaBlock(cleanBlocks[cursor])) {
+            newFragment.appendChild(cleanBlocks[cursor]);
+            cursor++;
+        }
+
+        // 1. ANA BAŞLIK (Varsa ilk başlık ortada ve kalın)
+        if (cursor < cleanBlocks.length && isHeadingCandidate(cleanBlocks[cursor], 0)) {
+            const mainTitleEl = doc.createElement('h2');
+            mainTitleEl.className = 'endlessr-main-title';
+            mainTitleEl.textContent = (cleanBlocks[cursor].innerText || cleanBlocks[cursor].textContent || '').replace(/\s+/g, ' ').trim();
+            newFragment.appendChild(mainTitleEl);
+            cursor++;
+
+            // 2. ALT BAŞLIK (VARSA) - Ana başlığın hemen altındaki ikinci başlık sola yatık
+            if (cursor < cleanBlocks.length && isHeadingCandidate(cleanBlocks[cursor], 1) && !isEpigraphCandidate(cleanBlocks[cursor])) {
+                const subTitleEl = doc.createElement('h3');
+                subTitleEl.className = 'endlessr-sub-title';
+                subTitleEl.textContent = (cleanBlocks[cursor].innerText || cleanBlocks[cursor].textContent || '').replace(/\s+/g, ' ').trim();
+                newFragment.appendChild(subTitleEl);
+                cursor++;
+            }
+        }
+
+        // 3. HİKAYE ÖNCESİ İTALİK / KALIN / ALINTI GİRİŞ PARAGRAFI (EPİGRAF)
+        // Prototipe göre: Ana/alt başlıktan sonra hikaye başlamadan önce italik/kalın/alıntı bir kısım varsa
+        // sola yatık, ilk cümlesi paragraf girintili, tek bir paragraf halinde ve kendi stilini koruyarak yazılır.
+        const epigraphParts = [];
+        while (cursor < cleanBlocks.length && isEpigraphCandidate(cleanBlocks[cursor])) {
+            const epEl = cleanBlocks[cursor];
+            // İçindeki <br> veya alt <p> etiketlerini tek paragraf akışında birleştir
+            const innerPList = epEl.querySelectorAll('p');
+            if (innerPList.length > 0) {
+                innerPList.forEach(ip => {
+                    const h = ip.innerHTML.replace(/<br\s*\/?>/gi, ' ').trim();
+                    if (h) epigraphParts.push(h);
+                });
+            } else {
+                const h = epEl.innerHTML.replace(/<br\s*\/?>/gi, ' ').trim();
+                if (h) epigraphParts.push(h);
+            }
+            cursor++;
+            if (epigraphParts.length >= 4) break;
+        }
+        if (epigraphParts.length > 0) {
+            const epigraphP = doc.createElement('p');
+            epigraphP.className = 'endlessr-epigraph';
+            epigraphP.innerHTML = epigraphParts.join(' ');
+            newFragment.appendChild(epigraphP);
+        }
+
+        // 4. ANA HİKAYE AKIŞI VE STATÜ / BAŞARIM / KISA İTALİK-KALIN BLOKLAR
+        let currentStatGroup = null;
+        const flushStatGroup = () => {
+            if (currentStatGroup && currentStatGroup.childNodes.length > 0) {
+                newFragment.appendChild(currentStatGroup);
+            }
+            currentStatGroup = null;
+        };
+
+        for (; cursor < cleanBlocks.length; cursor++) {
+            const block = cleanBlocks[cursor];
+
+            if (isPureMediaBlock(block)) {
+                flushStatGroup();
+                newFragment.appendChild(block);
+                continue;
+            }
+
+            const prevWasStat = currentStatGroup !== null;
+            if (isShortSpecialOrStatBlock(block, prevWasStat)) {
+                if (!currentStatGroup) {
+                    currentStatGroup = doc.createElement('div');
+                    currentStatGroup.className = 'endlessr-stat-block';
+                }
+
+                // Eğer blok içinde <br> varsa her satırı ayrı bir .endlessr-stat-line yap
+                if (block.querySelector('br')) {
+                    const rawLines = block.innerHTML.split(/<br\s*\/?>/i);
+                    rawLines.forEach(lineHtml => {
+                        const cleanLine = lineHtml.trim();
+                        if (cleanLine) {
+                            const lineP = doc.createElement('p');
+                            lineP.className = 'endlessr-stat-line';
+                            lineP.innerHTML = cleanLine;
+                            currentStatGroup.appendChild(lineP);
+                        }
+                    });
+                } else {
+                    const lineP = doc.createElement('p');
+                    lineP.className = 'endlessr-stat-line';
+                    lineP.innerHTML = block.innerHTML.trim();
+                    currentStatGroup.appendChild(lineP);
+                }
+                continue;
+            }
+
+            // Normal hikaye paragrafına geçmeden önce açık statü grubunu kapat
+            flushStatGroup();
+
+            // Bölüm ortası alt başlık (h1-h6) veya sahne ayırıcı (*** / ---) kontrolü
+            const tag = block.tagName.toLowerCase();
+            const plainTxt = (block.innerText || block.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!plainTxt) continue;
+
+            if (/^(?:\*\s*\*\s*\*+|-\s*-\s*-+|~\s*~\s*~+|•\s*•\s*•+|\*\*\*|---)$/.test(plainTxt)) {
+                const sepP = doc.createElement('p');
+                sepP.className = 'endlessr-main-title';
+                sepP.style.fontSize = '1.1em';
+                sepP.textContent = '* * *';
+                newFragment.appendChild(sepP);
+                continue;
+            }
+
+            if (/^h[1-6]$/.test(tag) && plainTxt.length <= 120) {
+                const subH = doc.createElement('h3');
+                subH.className = 'endlessr-sub-title';
+                subH.textContent = plainTxt;
+                newFragment.appendChild(subH);
+                continue;
+            }
+
+            // 5. NORMAL HİKAYE PARAGRAFI: 3-4 Cümlelik Paragraflara Bölme + Inline İtalik/Özel Kelime Normalizasyonu
+            const sentences = this.extractSentencesWithHtml(block);
+            if (sentences.length <= 4) {
+                const p = doc.createElement('p');
+                p.className = 'endlessr-narrative-p';
+                p.innerHTML = sentences.length > 0 ? sentences.join(' ') : block.innerHTML.trim();
+                newFragment.appendChild(p);
+            } else {
+                let sIdx = 0;
+                const totalS = sentences.length;
+                while (sIdx < totalS) {
+                    const rem = totalS - sIdx;
+                    let take = 4;
+                    if (rem <= 4) {
+                        take = rem;
+                    } else if (rem === 5 || rem === 6) {
+                        take = 3;
+                    } else if (rem === 7) {
+                        take = 4;
+                    } else {
+                        // İlk 3 cümlenin toplam uzunluğu uzunsa 3 cümle, kısaysa 4 cümle al
+                        const threeLen = (sentences[sIdx].length + sentences[sIdx + 1].length + sentences[sIdx + 2].length);
+                        take = threeLen > 340 ? 3 : 4;
+                    }
+                    const chunkHtml = sentences.slice(sIdx, sIdx + take).join(' ');
+                    const p = doc.createElement('p');
+                    p.className = 'endlessr-narrative-p';
+                    p.innerHTML = chunkHtml;
+                    newFragment.appendChild(p);
+                    sIdx += take;
+                }
+            }
+        }
+
+        flushStatGroup();
+
+        body.innerHTML = '';
+        body.appendChild(newFragment);
+        body.classList.add('endlessr-reformatted-body');
+        body.setAttribute('data-smart-reformatted', 'true');
+
+        if (footer) body.appendChild(footer);
+        if (spacer) body.appendChild(spacer);
     },
 
     // Boşluk Düzeltme Butonu Arayüzünü Güncelleme

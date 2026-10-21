@@ -1924,6 +1924,14 @@ const app = {
             });
         }
 
+        // Sayfa Biçimlendirme (Smart Reformat) Butonu (Görünüm Tabı)
+        const btnSmartReformat = document.getElementById('btn-smart-reformat');
+        if (btnSmartReformat) {
+            btnSmartReformat.addEventListener('click', () => {
+                reader.toggleSmartReformat();
+            });
+        }
+
         // Yazı Tipi Butonları (Görünüm Tabı)
         document.querySelectorAll('.font-family-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
