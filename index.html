@@ -15,7 +15,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <!-- CSS Stylesheet -->
-    <link rel="stylesheet" href="css/styles.css?v=37">
+    <link rel="stylesheet" href="css/styles.css?v=38">
     <script>
         (function() {
             try {
@@ -532,58 +532,64 @@
                     </div>
 
                     <!-- 2. SEKME: GÖRÜNÜM (Display) -->
-                    <div id="tab-pane-display" class="tab-pane">
+                    <div id="tab-pane-display" class="tab-pane" style="gap: 10px;">
                         <!-- Yazı Tipi -->
-                        <div class="style-row vertical-row">
-                            <span>Yazı Tipi</span>
+                        <div class="style-row vertical-row" style="gap: 6px; margin-bottom: 0;">
+                            <span style="font-size: 12px; color: var(--text-muted);">Yazı Tipi</span>
                             <div class="font-family-options">
-                                <button class="font-family-btn active" data-font="system-ui">Sistem</button>
-                                <button class="font-family-btn" data-font="Lora, serif">Lora</button>
-                                <button class="font-family-btn" data-font="Inter, sans-serif">Inter</button>
-                                <button class="font-family-btn" data-font="Outfit, sans-serif">Outfit</button>
+                                <button class="font-family-btn active" data-font="system-ui" style="padding: 7px 4px;">Sistem</button>
+                                <button class="font-family-btn" data-font="Lora, serif" style="padding: 7px 4px;">Lora</button>
+                                <button class="font-family-btn" data-font="Inter, sans-serif" style="padding: 7px 4px;">Inter</button>
+                                <button class="font-family-btn" data-font="Outfit, sans-serif" style="padding: 7px 4px;">Outfit</button>
                             </div>
                         </div>
-                        <!-- Yazı Boyutu -->
-                        <div class="style-row">
-                            <span>Yazı Boyutu</span>
-                            <div class="font-size-adjust">
-                                <button id="btn-font-dec" class="circle-btn">-</button>
-                                <span id="font-size-val">100%</span>
-                                <button id="btn-font-inc" class="circle-btn">+</button>
+
+                        <!-- Yazı Boyutu / Satır Aralığı / Kenar Boşluğu (Yan Yana 3'lü Kompakt Satır) -->
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%;">
+                            <!-- Yazı Boyutu -->
+                            <div style="display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 7px 4px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: rgba(128,128,128,0.04);">
+                                <span style="font-size: 11px; font-weight: 600; color: var(--text-muted);">Yazı Boyutu</span>
+                                <div class="font-size-adjust" style="display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0 2px; gap: 2px;">
+                                    <button id="btn-font-dec" class="circle-btn" style="width: 26px; height: 26px; font-size: 14px;">-</button>
+                                    <span id="font-size-val" style="font-size: 12px; font-weight: 700; min-width: 34px; text-align: center;">100%</span>
+                                    <button id="btn-font-inc" class="circle-btn" style="width: 26px; height: 26px; font-size: 14px;">+</button>
+                                </div>
+                            </div>
+                            <!-- Satır Aralığı -->
+                            <div style="display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 7px 4px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: rgba(128,128,128,0.04);">
+                                <span style="font-size: 11px; font-weight: 600; color: var(--text-muted);">Satır Aralığı</span>
+                                <div class="line-height-adjust" style="display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0 2px; gap: 2px;">
+                                    <button id="btn-lineheight-dec" class="circle-btn" style="width: 26px; height: 26px; font-size: 14px;">-</button>
+                                    <span id="lineheight-val" style="font-size: 12px; font-weight: 700; min-width: 30px; text-align: center;">1.6</span>
+                                    <button id="btn-lineheight-inc" class="circle-btn" style="width: 26px; height: 26px; font-size: 14px;">+</button>
+                                </div>
+                            </div>
+                            <!-- Kenar Boşluğu -->
+                            <div style="display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 7px 4px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: rgba(128,128,128,0.04);">
+                                <span style="font-size: 11px; font-weight: 600; color: var(--text-muted);">Kenar Boşluğu</span>
+                                <div class="padding-adjust" style="display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0 2px; gap: 2px;">
+                                    <button id="btn-padding-dec" class="circle-btn" style="width: 26px; height: 26px; font-size: 14px;">-</button>
+                                    <span id="padding-val" style="font-size: 12px; font-weight: 700; min-width: 30px; text-align: center;">8px</span>
+                                    <button id="btn-padding-inc" class="circle-btn" style="width: 26px; height: 26px; font-size: 14px;">+</button>
+                                </div>
                             </div>
                         </div>
-                        <!-- Satır Aralığı -->
-                        <div class="style-row">
-                            <span>Satır Aralığı</span>
-                            <div class="line-height-adjust">
-                                <button id="btn-lineheight-dec" class="circle-btn">-</button>
-                                <span id="lineheight-val">1.6</span>
-                                <button id="btn-lineheight-inc" class="circle-btn">+</button>
-                            </div>
-                        </div>
-                        <!-- Kenar Boşluğu -->
-                        <div class="style-row">
-                            <span>Kenar Boşluğu</span>
-                            <div class="padding-adjust" style="display: flex; align-items: center; gap: 16px;">
-                                <button id="btn-padding-dec" class="circle-btn">-</button>
-                                <span id="padding-val" style="font-size: 14px; font-weight: 600; min-width: 48px; text-align: center;">8px</span>
-                                <button id="btn-padding-inc" class="circle-btn">+</button>
-                            </div>
-                        </div>
-                        <!-- Boşluk Düzeltme (Manuel) -->
-                        <div class="style-row">
-                            <span>Boşluk Düzeltme</span>
-                            <button id="btn-fix-spacing" class="action-outline-btn-sm" style="padding: 8px 14px; border-radius: var(--radius-sm); font-weight: 600; display: flex; align-items: center; gap: 6px;">
-                                <i data-lucide="align-left" style="width: 14px; height: 14px;"></i>
-                                <span id="fix-spacing-label">Kapalı</span>
+
+                        <!-- Boşluk Düzeltme & Sayfa Biçimlendirme (Yan Yana 2'li Kompakt Satır) -->
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; width: 100%;">
+                            <button id="btn-fix-spacing" class="action-outline-btn-sm" style="padding: 8px 10px; border-radius: var(--radius-sm); font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%;">
+                                <span style="display: flex; align-items: center; gap: 5px; font-size: 12px;">
+                                    <i data-lucide="align-left" style="width: 14px; height: 14px; flex-shrink: 0;"></i>
+                                    <span>Boşluk Düzelt</span>
+                                </span>
+                                <span id="fix-spacing-label" style="font-size: 11px; opacity: 0.85;">Kapalı</span>
                             </button>
-                        </div>
-                        <!-- Akıllı Sayfa Biçimlendirme (Okunabilirlik Modu) -->
-                        <div class="style-row">
-                            <span>Sayfa Biçimlendirme</span>
-                            <button id="btn-smart-reformat" class="action-outline-btn-sm" style="padding: 8px 14px; border-radius: var(--radius-sm); font-weight: 600; display: flex; align-items: center; gap: 6px;">
-                                <i data-lucide="sparkles" style="width: 14px; height: 14px;"></i>
-                                <span id="smart-reformat-label">Kapalı</span>
+                            <button id="btn-smart-reformat" class="action-outline-btn-sm" style="padding: 8px 10px; border-radius: var(--radius-sm); font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%;">
+                                <span style="display: flex; align-items: center; gap: 5px; font-size: 12px;">
+                                    <i data-lucide="sparkles" style="width: 14px; height: 14px; flex-shrink: 0;"></i>
+                                    <span>Biçimlendirme</span>
+                                </span>
+                                <span id="smart-reformat-label" style="font-size: 11px; opacity: 0.85;">Kapalı</span>
                             </button>
                         </div>
                     </div>
@@ -755,10 +761,10 @@
 
     <!-- Uygulama Scriptleri -->
     <script src="capacitor.js"></script>
-    <script src="js/db.js?v=37"></script>
-    <script src="js/utils.js?v=37"></script>
-    <script src="js/translate.js?v=37"></script>
-    <script src="js/reader.js?v=37"></script>
-    <script src="js/app.js?v=37"></script>
+    <script src="js/db.js?v=38"></script>
+    <script src="js/utils.js?v=38"></script>
+    <script src="js/translate.js?v=38"></script>
+    <script src="js/reader.js?v=38"></script>
+    <script src="js/app.js?v=38"></script>
 </body>
 </html>
