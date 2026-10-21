@@ -2630,32 +2630,27 @@ const reader = {
     },
 
     // Paragraf başındaki Drop-Cap (büyük ayrık ilk harf) etiketlerini düz metne çevirip ilk kelimeyle birleştirir
+    // (İtalik, kalın vb. diğer tüm yazı stillerini olduğu gibi korur)
     normalizeDropCapsInBlock(block, doc) {
         if (!block || !block.childNodes || block.childNodes.length === 0) return;
 
-        // 1. Blok içindeki tüm drop-cap / first-letter / first-word sınıflı veya anlamsız <span>/<font> etiketlerini düz metne aç
-        const unwrapSpanOrDropCap = (parent) => {
+        // 1. Yalnızca gerçek Drop-Cap (float:left veya dropcap sınıfı olan kısa başlangıç harfi) elemanlarını düz metne aç
+        const unwrapDropCapElements = (parent) => {
             Array.from(parent.childNodes).forEach(node => {
                 if (node.nodeType !== Node.ELEMENT_NODE) return;
                 const tag = node.tagName.toLowerCase();
                 if (tag === 'img' || tag === 'svg' || tag === 'br') return;
 
-                unwrapSpanOrDropCap(node);
+                unwrapDropCapElements(node);
 
                 const cls = ((node.className || '') + ' ' + (node.id || '')).toLowerCase();
                 const inlineStyle = (node.getAttribute('style') || '').toLowerCase();
                 const txt = (node.textContent || '').trim();
-                const isDropCapEl = /drop|cap|init|first[-_]?letter|first[-_]?word|let\b|dcb|dcp/i.test(cls) ||
-                                    inlineStyle.includes('float: left') || inlineStyle.includes('float:left');
+                const isExplicitDropCap = node.getAttribute('data-epub-dropcap') === '1' ||
+                                          /drop[-_]?cap|init[-_]?cap|first[-_]?letter|dcb|dcp/i.test(cls) ||
+                                          inlineStyle.includes('float: left') || inlineStyle.includes('float:left');
 
-                const isPureSpan = (tag === 'span' || tag === 'font') &&
-                                   !(/italic|bold/.test(cls)) &&
-                                   !inlineStyle.includes('font-style: italic') &&
-                                   !inlineStyle.includes('font-style:italic') &&
-                                   !inlineStyle.includes('font-weight: bold') &&
-                                   !inlineStyle.includes('font-weight:bold');
-
-                if (isDropCapEl || isPureSpan) {
+                if (isExplicitDropCap && txt.length <= 4) {
                     while (node.firstChild) {
                         parent.insertBefore(node.firstChild, node);
                     }
@@ -2664,20 +2659,26 @@ const reader = {
             });
         };
 
-        unwrapSpanOrDropCap(block);
+        unwrapDropCapElements(block);
 
         // 2. Baştaki boş metin düğümlerini temizle
         while (block.firstChild && block.firstChild.nodeType === Node.TEXT_NODE && !(block.firstChild.nodeValue || '').trim()) {
             block.removeChild(block.firstChild);
         }
 
-        // 3. Eğer ilk düğüm hala tek harfli bir <b>, <strong>, <i> vb. ise onu da düz metne çevir
+        // 3. Eğer ilk düğüm tek büyük harften oluşan bir sarmalayıcıysa ve hemen arkasından kelimenin küçük harfli devamı geliyorsa ("<span>T</span>he"), ilk harfi düz metne çevir
         const firstNode = block.firstChild;
         if (firstNode && firstNode.nodeType === Node.ELEMENT_NODE) {
             const firstTag = firstNode.tagName.toLowerCase();
             const firstText = (firstNode.textContent || '').trim();
             const isSingleInitial = /^["“'‘«]?[A-ZÇĞİÖŞÜ]["”'’»]?$/.test(firstText);
-            if (isSingleInitial && firstTag !== 'img' && firstTag !== 'svg') {
+            const nextSibling = firstNode.nextSibling;
+            const nextText = nextSibling ? (nextSibling.textContent || '') : '';
+            const continuesSameWord = /^[a-zçğıöşü]/.test(nextText.trimStart());
+            const isDropCapStyled = firstNode.getAttribute('data-epub-dropcap') === '1' ||
+                                    /drop|cap|init|first[-_]?letter|let\b/i.test((firstNode.className || '') + ' ' + (firstNode.id || ''));
+
+            if (isSingleInitial && (continuesSameWord || isDropCapStyled || firstTag === 'span') && firstTag !== 'img' && firstTag !== 'svg') {
                 const textReplacement = doc.createTextNode(firstText);
                 block.replaceChild(textReplacement, firstNode);
             }
@@ -2694,7 +2695,8 @@ const reader = {
         }
     },
 
-    // HTML içerisindeki inline etiketleri (<i>, <em>, <b>, <strong>) koruyarak ve drop-cap/span sınıflarını temizleyerek cümlelere ayırır
+    // HTML içerisindeki tüm italik, kalın, altı çizili ve özel stilleri (<i>, <em>, <b>, <strong>, <u>, <span class="...">)
+    // iç içe geçmiş olsalar veya birden fazla cümleye yayılsalar bile birebir koruyarak cümlelere ayırır
     extractSentencesWithHtml(containerNode) {
         const sentences = [[]];
         const abbrRegex = /\b(?:Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr|vs|vb|orn|bkz|No|Vol|Ch|Pt|Fig|Inc|Ltd)\.\s*$/i;
@@ -2713,13 +2715,21 @@ const reader = {
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
 
-        const processText = (text, wrapperStart = '', wrapperEnd = '') => {
+        const buildWrapperStrings = (wrappers) => {
+            if (!wrappers || wrappers.length === 0) return { start: '', end: '' };
+            const start = wrappers.map(w => w.open).join('');
+            const end = wrappers.slice().reverse().map(w => w.close).join('');
+            return { start, end };
+        };
+
+        const processText = (text, wrappers) => {
+            const { start, end } = buildWrapperStrings(wrappers);
             const regex = /[^.!?…]+(?:[.!?…]+["”'’)\]]*\s*|$)/g;
             const matches = text.match(regex) || [text];
             for (let i = 0; i < matches.length; i++) {
                 const piece = matches[i];
                 if (!piece) continue;
-                pushHtmlToCurrent(wrapperStart + escapeHtml(piece) + wrapperEnd);
+                pushHtmlToCurrent(start + escapeHtml(piece) + end);
                 const trimmed = piece.trim();
                 const endsWithPunct = /[.!?…]["”'’)\]]*$/.test(trimmed);
                 const isAbbr = abbrRegex.test(trimmed) || /\b[A-ZÇĞİÖŞÜ]\.$/.test(trimmed);
@@ -2729,61 +2739,77 @@ const reader = {
             }
         };
 
-        const walk = (node) => {
+        const getWrappersForElement = (el, currentWrappers) => {
+            const next = currentWrappers.slice();
+            const tag = el.tagName.toLowerCase();
+            const inlineStyle = (el.getAttribute('style') || '').toLowerCase();
+            const cls = (el.className || '').trim();
+            const clsLower = cls.toLowerCase();
+
+            const isItalic = tag === 'i' || tag === 'em' ||
+                             el.getAttribute('data-epub-italic') === '1' ||
+                             /\b(?:italic|italics|em|oblique)\b/.test(clsLower) ||
+                             inlineStyle.includes('font-style: italic') || inlineStyle.includes('font-style:italic') ||
+                             inlineStyle.includes('font-style: oblique') || inlineStyle.includes('font-style:oblique');
+
+            const isBold = tag === 'b' || tag === 'strong' ||
+                           el.getAttribute('data-epub-bold') === '1' ||
+                           /\b(?:bold|strong|semibold)\b/.test(clsLower) ||
+                           inlineStyle.includes('font-weight: bold') || inlineStyle.includes('font-weight:bold') ||
+                           inlineStyle.includes('font-weight: 700') || inlineStyle.includes('font-weight:700') ||
+                           inlineStyle.includes('font-weight: 600') || inlineStyle.includes('font-weight:600');
+
+            const isUnderline = tag === 'u' ||
+                                el.getAttribute('data-epub-underline') === '1' ||
+                                inlineStyle.includes('text-decoration: underline') || inlineStyle.includes('text-decoration:underline');
+
+            // EPUB sınıfını koru (dropcap olmayan span/i/b sınıfları)
+            if (cls && !/drop[-_]?cap|init[-_]?cap|first[-_]?letter|dcb|dcp|endlessr-/i.test(cls)) {
+                const safeTag = (tag === 'span' || tag === 'i' || tag === 'em' || tag === 'b' || tag === 'strong' || tag === 'u' || tag === 'sub' || tag === 'sup' || tag === 'small') ? tag : 'span';
+                next.push({ open: `<${safeTag} class="${escapeHtml(cls)}">`, close: `</${safeTag}>` });
+            }
+
+            if (isBold && !next.some(w => w.open === '<b>' || w.open.startsWith('<b ') || w.open.startsWith('<strong'))) {
+                next.push({ open: '<b>', close: '</b>' });
+            }
+            if (isItalic && !next.some(w => w.open === '<i>' || w.open.startsWith('<i ') || w.open.startsWith('<em'))) {
+                next.push({ open: '<i>', close: '</i>' });
+            }
+            if (isUnderline && !next.some(w => w.open === '<u>' || w.open.startsWith('<u '))) {
+                next.push({ open: '<u>', close: '</u>' });
+            }
+            if ((tag === 's' || tag === 'strike' || tag === 'del' || tag === 'sub' || tag === 'sup' || tag === 'small' || tag === 'code') &&
+                !next.some(w => w.open.startsWith(`<${tag}`))) {
+                next.push({ open: `<${tag}>`, close: `</${tag}>` });
+            }
+            if (tag === 'a') {
+                const href = (el.getAttribute('href') || '').trim();
+                if (href) {
+                    next.push({ open: `<a href="${escapeHtml(href)}">`, close: '</a>' });
+                }
+            }
+
+            return next;
+        };
+
+        // Eğer paragrafın (containerNode) kendisi EPUB stilinde italik veya kalınsa başlangıç sarmalayıcısına ekle
+        const rootWrappers = getWrappersForElement(containerNode, []);
+
+        const walk = (node, wrappers) => {
             if (node.nodeType === Node.TEXT_NODE) {
-                processText(node.nodeValue || '');
+                processText(node.nodeValue || '', wrappers);
             } else if (node.nodeType === Node.ELEMENT_NODE) {
                 const tag = node.tagName.toLowerCase();
                 if (tag === 'br') {
                     finishSentence();
                     return;
                 }
-                const rawTxt = node.textContent || '';
-                if (!rawTxt) return;
-
-                // <span> veya <font> gibi EPUB özel sınıf/dropcap taşıyan etiketleri temizle;
-                // yalnızca italik veya kalın anlamı varsa temiz <i> / <b> olarak koru
-                const inlineStyle = (node.getAttribute('style') || '').toLowerCase();
-                const cls = (node.className || '').toLowerCase();
-                let semanticTag = null;
-                if (tag === 'i' || tag === 'em' || /italic|em\b/.test(cls) || inlineStyle.includes('font-style: italic') || inlineStyle.includes('font-style:italic')) {
-                    semanticTag = 'i';
-                } else if (tag === 'b' || tag === 'strong' || /bold/.test(cls) || inlineStyle.includes('font-weight: bold') || inlineStyle.includes('font-weight:bold') || inlineStyle.includes('font-weight: 700')) {
-                    semanticTag = 'b';
-                } else if (tag === 'u' || tag === 'sub' || tag === 'sup') {
-                    semanticTag = tag;
-                } else if (tag === 'a') {
-                    const href = (node.getAttribute('href') || '').trim();
-                    if (href) {
-                        pushHtmlToCurrent(`<a href="${escapeHtml(href)}">${escapeHtml(rawTxt)}</a>`);
-                        return;
-                    }
-                }
-
-                if (!semanticTag) {
-                    // Span veya özel sınıf kapsayıcısının içindeki düğümleri doğrudan yürü (dropcap sınıflarını tamamen soyar)
-                    Array.from(node.childNodes).forEach(walk);
-                    return;
-                }
-
-                const openTag = `<${semanticTag}>`;
-                const closeTag = `</${semanticTag}>`;
-                const trimmed = rawTxt.trim();
-                const innerMatches = trimmed.match(/[.!?…]+["”'’)\]]*(?=\s|$)/g);
-                if (!innerMatches || innerMatches.length <= 1) {
-                    pushHtmlToCurrent(openTag + escapeHtml(rawTxt) + closeTag);
-                    const endsWithPunct = /[.!?…]["”'’)\]]*$/.test(trimmed);
-                    const isAbbr = abbrRegex.test(trimmed);
-                    if (endsWithPunct && !isAbbr) {
-                        finishSentence();
-                    }
-                } else {
-                    processText(rawTxt, openTag, closeTag);
-                }
+                const nextWrappers = getWrappersForElement(node, wrappers);
+                Array.from(node.childNodes).forEach(child => walk(child, nextWrappers));
             }
         };
 
-        Array.from(containerNode.childNodes).forEach(walk);
+        Array.from(containerNode.childNodes).forEach(child => walk(child, rootWrappers));
         return sentences
             .map(tokens => tokens.join('').replace(/\s+/g, ' ').trim())
             .filter(s => s.length > 0);
@@ -2844,9 +2870,36 @@ const reader = {
             return;
         }
 
+        // Canlı DOM üzerinde EPUB CSS sınıflarından gelen italik, kalın, altı çizili ve drop-cap stillerini işaretle
+        // (Böylece .calibre5 gibi sınıf tabanlı italik/kalın yazılar yeniden biçimlendirme sonrasında da stillerini kaybetmez)
+        const win = doc.defaultView;
+        if (win && typeof win.getComputedStyle === 'function') {
+            try {
+                const liveElements = body.querySelectorAll('p, span, div, i, em, b, strong, u, font, blockquote, li');
+                liveElements.forEach(el => {
+                    const cs = win.getComputedStyle(el);
+                    if (!cs) return;
+                    if (cs.fontStyle === 'italic' || cs.fontStyle === 'oblique') {
+                        el.setAttribute('data-epub-italic', '1');
+                    }
+                    const fw = cs.fontWeight;
+                    if (fw === 'bold' || fw === 'bolder' || (parseInt(fw, 10) >= 600)) {
+                        el.setAttribute('data-epub-bold', '1');
+                    }
+                    const td = cs.textDecorationLine || cs.textDecoration || '';
+                    if (td.includes('underline') && el.tagName.toLowerCase() !== 'a') {
+                        el.setAttribute('data-epub-underline', '1');
+                    }
+                    if (cs.float === 'left' || cs.float === 'right') {
+                        el.setAttribute('data-epub-dropcap', '1');
+                    }
+                });
+            } catch (e) {}
+        }
+
         // Çalışma kopyası oluştur
         const workRoot = doc.createElement('div');
-        workRoot.innerHTML = body.__endlessrOrigHtml;
+        workRoot.innerHTML = body.innerHTML;
 
         // A. Reklam / Kaynak Site / Harici Linkleri Temizle (İçindekiler / Bölüm İçi Linkler Hariç)
         const externalUrlRegex = /(?:https?:\/\/\S+|www\.\S+|\b(?:discord\.gg|patreon\.com|ko-fi\.com|bit\.ly|t\.me)\/\S+|\b[a-z0-9-]+\.(?:com|net|org|xyz|io|me|co|site|online|info|club)\b(?:\/\S*)?)/gi;
@@ -2935,15 +2988,30 @@ const reader = {
         const getInlineStyledRatio = (el) => {
             const txt = (el.innerText || el.textContent || '').trim();
             if (!txt) return 0;
-            const styledNodes = el.querySelectorAll('i, em, b, strong');
+            if (el.getAttribute('data-epub-italic') === '1' || el.getAttribute('data-epub-bold') === '1') {
+                return 1;
+            }
+            const selector = 'i, em, b, strong, [data-epub-italic="1"], [data-epub-bold="1"]';
+            const styledNodes = el.querySelectorAll(selector);
             let styledLen = 0;
             styledNodes.forEach(sn => {
                 // İç içe geçmiş i/b etiketlerini çift saymamak için yalnızca en üst eşleşmeyi topla
-                if (!sn.parentElement || !sn.parentElement.closest('i, em, b, strong')) {
+                if (!sn.parentElement || !sn.parentElement.closest(selector)) {
                     styledLen += ((sn.innerText || sn.textContent || '').trim().length);
                 }
             });
             return styledLen / txt.length;
+        };
+
+        const wrapWithBlockInlineStyle = (el, innerHtmlStr) => {
+            let res = innerHtmlStr;
+            if (el.getAttribute('data-epub-bold') === '1' && !/^<(?:b|strong)\b/i.test(res)) {
+                res = `<b>${res}</b>`;
+            }
+            if (el.getAttribute('data-epub-italic') === '1' && !/^<(?:i|em)\b/i.test(res)) {
+                res = `<i>${res}</i>`;
+            }
+            return res;
         };
 
         const isMostlyStyledInline = (el) => {
@@ -3138,11 +3206,11 @@ const reader = {
             if (innerPList.length > 0) {
                 innerPList.forEach(ip => {
                     this.normalizeDropCapsInBlock(ip, doc);
-                    const h = ip.innerHTML.replace(/<br\s*\/?>/gi, ' ').trim();
+                    const h = wrapWithBlockInlineStyle(ip, ip.innerHTML.replace(/<br\s*\/?>/gi, ' ').trim());
                     if (h) epigraphParts.push(h);
                 });
             } else {
-                const h = epEl.innerHTML.replace(/<br\s*\/?>/gi, ' ').trim();
+                const h = wrapWithBlockInlineStyle(epEl, epEl.innerHTML.replace(/<br\s*\/?>/gi, ' ').trim());
                 if (h) epigraphParts.push(h);
             }
             cursor++;
@@ -3209,14 +3277,14 @@ const reader = {
                         if (cleanLine) {
                             const lineP = doc.createElement('p');
                             lineP.className = 'endlessr-stat-line';
-                            lineP.innerHTML = cleanLine;
+                            lineP.innerHTML = wrapWithBlockInlineStyle(block, cleanLine);
                             currentStatGroup.appendChild(lineP);
                         }
                     });
                 } else {
                     const lineP = doc.createElement('p');
                     lineP.className = 'endlessr-stat-line';
-                    lineP.innerHTML = block.innerHTML.trim();
+                    lineP.innerHTML = wrapWithBlockInlineStyle(block, block.innerHTML.trim());
                     currentStatGroup.appendChild(lineP);
                 }
                 continue;
