@@ -2540,12 +2540,32 @@ const reader = {
                 body.endlessr-reformatted-body .endlessr-epigraph strong,
                 body.endlessr-reformatted-body .endlessr-epigraph span {
                     display: inline !important;
+                    float: none !important;
                     font-size: inherit !important;
                     line-height: inherit !important;
                     font-family: inherit !important;
                     vertical-align: baseline !important;
                     margin: 0 !important;
                     padding: 0 !important;
+                    border: none !important;
+                    position: static !important;
+                }
+                body.endlessr-reformatted-body *::first-letter,
+                body.endlessr-reformatted-body p::first-letter,
+                body.endlessr-reformatted-body p:first-of-type::first-letter,
+                body.endlessr-reformatted-body div::first-letter,
+                body.endlessr-reformatted-body blockquote::first-letter {
+                    float: none !important;
+                    font-size: inherit !important;
+                    line-height: inherit !important;
+                    font-family: inherit !important;
+                    font-weight: inherit !important;
+                    color: inherit !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    border: none !important;
+                    initial-letter: normal !important;
+                    -webkit-initial-letter: normal !important;
                 }
                 body.endlessr-reformatted-body .endlessr-stat-block {
                     text-align: left !important;
@@ -2609,7 +2629,72 @@ const reader = {
         }
     },
 
-    // HTML içerisindeki inline etiketleri (<i>, <em>, <b>, <strong>, <span>) koruyarak cümlelere ayırır
+    // Paragraf başındaki Drop-Cap (büyük ayrık ilk harf) etiketlerini düz metne çevirip ilk kelimeyle birleştirir
+    normalizeDropCapsInBlock(block, doc) {
+        if (!block || !block.childNodes || block.childNodes.length === 0) return;
+
+        // 1. Blok içindeki tüm drop-cap / first-letter / first-word sınıflı veya anlamsız <span>/<font> etiketlerini düz metne aç
+        const unwrapSpanOrDropCap = (parent) => {
+            Array.from(parent.childNodes).forEach(node => {
+                if (node.nodeType !== Node.ELEMENT_NODE) return;
+                const tag = node.tagName.toLowerCase();
+                if (tag === 'img' || tag === 'svg' || tag === 'br') return;
+
+                unwrapSpanOrDropCap(node);
+
+                const cls = ((node.className || '') + ' ' + (node.id || '')).toLowerCase();
+                const inlineStyle = (node.getAttribute('style') || '').toLowerCase();
+                const txt = (node.textContent || '').trim();
+                const isDropCapEl = /drop|cap|init|first[-_]?letter|first[-_]?word|let\b|dcb|dcp/i.test(cls) ||
+                                    inlineStyle.includes('float: left') || inlineStyle.includes('float:left');
+
+                const isPureSpan = (tag === 'span' || tag === 'font') &&
+                                   !(/italic|bold/.test(cls)) &&
+                                   !inlineStyle.includes('font-style: italic') &&
+                                   !inlineStyle.includes('font-style:italic') &&
+                                   !inlineStyle.includes('font-weight: bold') &&
+                                   !inlineStyle.includes('font-weight:bold');
+
+                if (isDropCapEl || isPureSpan) {
+                    while (node.firstChild) {
+                        parent.insertBefore(node.firstChild, node);
+                    }
+                    parent.removeChild(node);
+                }
+            });
+        };
+
+        unwrapSpanOrDropCap(block);
+
+        // 2. Baştaki boş metin düğümlerini temizle
+        while (block.firstChild && block.firstChild.nodeType === Node.TEXT_NODE && !(block.firstChild.nodeValue || '').trim()) {
+            block.removeChild(block.firstChild);
+        }
+
+        // 3. Eğer ilk düğüm hala tek harfli bir <b>, <strong>, <i> vb. ise onu da düz metne çevir
+        const firstNode = block.firstChild;
+        if (firstNode && firstNode.nodeType === Node.ELEMENT_NODE) {
+            const firstTag = firstNode.tagName.toLowerCase();
+            const firstText = (firstNode.textContent || '').trim();
+            const isSingleInitial = /^["“'‘«]?[A-ZÇĞİÖŞÜ]["”'’»]?$/.test(firstText);
+            if (isSingleInitial && firstTag !== 'img' && firstTag !== 'svg') {
+                const textReplacement = doc.createTextNode(firstText);
+                block.replaceChild(textReplacement, firstNode);
+            }
+        }
+
+        block.normalize();
+
+        // 4. İlk metin düğümünün başında tek büyük harf ile kelimenin devamı arasında yapay boşluk kalmışsa birleştir
+        if (block.firstChild && block.firstChild.nodeType === Node.TEXT_NODE) {
+            let val = block.firstChild.nodeValue || '';
+            // "A" ve "I" İngilizce tek harfli kelimeler olabilir ("A thing", "I was"), diğer tek büyük harfler + küçük harf devamı ("T he", "W hen") kesinlikle aynı kelimedir
+            val = val.replace(/^(\s*["“'‘«]?[B-HJ-ZÇĞİÖŞÜ])\s+([a-zçğıöşü])/, '$1$2');
+            block.firstChild.nodeValue = val;
+        }
+    },
+
+    // HTML içerisindeki inline etiketleri (<i>, <em>, <b>, <strong>) koruyarak ve drop-cap/span sınıflarını temizleyerek cümlelere ayırır
     extractSentencesWithHtml(containerNode) {
         const sentences = [[]];
         const abbrRegex = /\b(?:Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr|vs|vb|orn|bkz|No|Vol|Ch|Pt|Fig|Inc|Ltd)\.\s*$/i;
@@ -2644,29 +2729,6 @@ const reader = {
             }
         };
 
-        const sanitizeInlineNode = (el) => {
-            const clone = el.cloneNode(true);
-            const cleanStyles = (node) => {
-                if (node.nodeType === Node.ELEMENT_NODE) {
-                    if (node.hasAttribute('style')) {
-                        node.style.fontSize = '';
-                        node.style.lineHeight = '';
-                        node.style.fontFamily = '';
-                        node.style.display = '';
-                        node.style.margin = '';
-                        node.style.padding = '';
-                        node.style.textIndent = '';
-                        if (!node.getAttribute('style').trim()) {
-                            node.removeAttribute('style');
-                        }
-                    }
-                    Array.from(node.children).forEach(cleanStyles);
-                }
-            };
-            cleanStyles(clone);
-            return clone;
-        };
-
         const walk = (node) => {
             if (node.nodeType === Node.TEXT_NODE) {
                 processText(node.nodeValue || '');
@@ -2676,28 +2738,54 @@ const reader = {
                     finishSentence();
                     return;
                 }
-                const txt = (node.textContent || '').trim();
-                if (!txt) return;
-                const cleanEl = sanitizeInlineNode(node);
-                const innerMatches = txt.match(/[.!?…]+["”'’)\]]*(?=\s|$)/g);
+                const rawTxt = node.textContent || '';
+                if (!rawTxt) return;
+
+                // <span> veya <font> gibi EPUB özel sınıf/dropcap taşıyan etiketleri temizle;
+                // yalnızca italik veya kalın anlamı varsa temiz <i> / <b> olarak koru
+                const inlineStyle = (node.getAttribute('style') || '').toLowerCase();
+                const cls = (node.className || '').toLowerCase();
+                let semanticTag = null;
+                if (tag === 'i' || tag === 'em' || /italic|em\b/.test(cls) || inlineStyle.includes('font-style: italic') || inlineStyle.includes('font-style:italic')) {
+                    semanticTag = 'i';
+                } else if (tag === 'b' || tag === 'strong' || /bold/.test(cls) || inlineStyle.includes('font-weight: bold') || inlineStyle.includes('font-weight:bold') || inlineStyle.includes('font-weight: 700')) {
+                    semanticTag = 'b';
+                } else if (tag === 'u' || tag === 'sub' || tag === 'sup') {
+                    semanticTag = tag;
+                } else if (tag === 'a') {
+                    const href = (node.getAttribute('href') || '').trim();
+                    if (href) {
+                        pushHtmlToCurrent(`<a href="${escapeHtml(href)}">${escapeHtml(rawTxt)}</a>`);
+                        return;
+                    }
+                }
+
+                if (!semanticTag) {
+                    // Span veya özel sınıf kapsayıcısının içindeki düğümleri doğrudan yürü (dropcap sınıflarını tamamen soyar)
+                    Array.from(node.childNodes).forEach(walk);
+                    return;
+                }
+
+                const openTag = `<${semanticTag}>`;
+                const closeTag = `</${semanticTag}>`;
+                const trimmed = rawTxt.trim();
+                const innerMatches = trimmed.match(/[.!?…]+["”'’)\]]*(?=\s|$)/g);
                 if (!innerMatches || innerMatches.length <= 1) {
-                    pushHtmlToCurrent(cleanEl.outerHTML);
-                    const endsWithPunct = /[.!?…]["”'’)\]]*$/.test(txt);
-                    const isAbbr = abbrRegex.test(txt);
+                    pushHtmlToCurrent(openTag + escapeHtml(rawTxt) + closeTag);
+                    const endsWithPunct = /[.!?…]["”'’)\]]*$/.test(trimmed);
+                    const isAbbr = abbrRegex.test(trimmed);
                     if (endsWithPunct && !isAbbr) {
                         finishSentence();
                     }
                 } else {
-                    const openTag = `<${tag}${cleanEl.className ? ` class="${cleanEl.className}"` : ''}>`;
-                    const closeTag = `</${tag}>`;
-                    processText(cleanEl.textContent || '', openTag, closeTag);
+                    processText(rawTxt, openTag, closeTag);
                 }
             }
         };
 
         Array.from(containerNode.childNodes).forEach(walk);
         return sentences
-            .map(tokens => tokens.join('').trim())
+            .map(tokens => tokens.join('').replace(/\s+/g, ' ').trim())
             .filter(s => s.length > 0);
     },
 
@@ -2844,9 +2932,9 @@ const reader = {
             return false;
         };
 
-        const isMostlyStyledInline = (el) => {
+        const getInlineStyledRatio = (el) => {
             const txt = (el.innerText || el.textContent || '').trim();
-            if (!txt) return false;
+            if (!txt) return 0;
             const styledNodes = el.querySelectorAll('i, em, b, strong');
             let styledLen = 0;
             styledNodes.forEach(sn => {
@@ -2855,19 +2943,29 @@ const reader = {
                     styledLen += ((sn.innerText || sn.textContent || '').trim().length);
                 }
             });
-            return styledLen >= txt.length * 0.72;
+            return styledLen / txt.length;
+        };
+
+        const isMostlyStyledInline = (el) => {
+            return getInlineStyledRatio(el) >= 0.72;
         };
 
         const isStatOrSystemLineText = (text) => {
             const t = (text || '').trim();
-            if (!t || t.length > 140) return false;
-            // "GÜÇ: 14 falan filan", "CAN: 23", "Adı: ...", "Seviye: 5" gibi KEY: Value satırları
-            if (/^[A-ZÇĞİÖŞÜa-zçğıöşü0-9\s/()\-_]{1,32}:\s*.+$/.test(t) && !/^(?:not|dipnot|örnek|açıklama|uyarı|ipucu|hatırlatma)\s*:/i.test(t)) {
+            if (!t || t.length > 160) return false;
+            // "GÜÇ: 14 falan filan", "CAN: 23", "Class: Reaper", "Sınıf: ...", "Seviye: 5" gibi KEY: Value satırları
+            if (/^[A-ZÇĞİÖŞÜa-zçğıöşü0-9\s/()\-_'’+]{1,36}:\s*.+$/.test(t) && !/^(?:not|dipnot|örnek|açıklama|uyarı|ipucu|hatırlatma|note|warning)\s*:/i.test(t)) {
                 return true;
             }
             // [Sistem Bildirimi], <Yetkinlik ...>, 【...】
             if (/^(?:\[[^[\]]+\]|<[^<>]+>|【[^【】]+】|\{[^}]+\})$/.test(t)) {
                 return true;
+            }
+            // Kısa durum/stat/sınıf anahtar kelimeli satırlar (ör. "Level Up!", "+2 Strength", "Class Acquired: ...")
+            if (t.length <= 95 && /(?:\b(?:lv\.?|lvl|level|tier|rank|grade|class|skill|stat|status|title|passive|active|sınıf|seviye|durum|yetenek|unvan|güç|can|hız|zeka)\b|[+\-]\d+\s+[a-zA-ZçğıöşüÇĞİÖŞÜ])/i.test(t) && !/[.!?]{1}\s+[A-ZÇĞİÖŞÜ]/.test(t)) {
+                if (!/[.!?]$/.test(t) || /[:\[\]<>+%]/.test(t)) {
+                    return true;
+                }
             }
             return false;
         };
@@ -2880,17 +2978,24 @@ const reader = {
             // <br> ile ayrılmış çoklu kısa satırlar (ör. statü ekranı veya şiir/sistem bloğu)
             if (el.querySelector('br')) {
                 const lines = txt.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-                if (lines.length >= 2 && lines.every(l => l.length <= 125)) {
+                if (lines.length >= 2 && lines.every(l => l.length <= 135)) {
                     return true;
                 }
             }
 
             if (isStatOrSystemLineText(txt)) return true;
 
-            // Tamamı italik veya kalın olan kısa satırlar (veya bir statü satırının hemen altındaki italik açıklama satırı)
-            if (isMostlyStyledInline(el)) {
-                if (txt.length <= 95) return true;
-                if (prevWasStat && txt.length <= 165) return true;
+            const styledRatio = getInlineStyledRatio(el);
+
+            // Tamamı veya yarısı italik/kalın yazılan durum, stat, sınıf veya bildirim satırları
+            if (styledRatio >= 0.72) {
+                if (txt.length <= 105) return true;
+                if (prevWasStat && txt.length <= 180) return true;
+            } else if (styledRatio >= 0.35 && txt.length <= 125) {
+                if (prevWasStat) return true;
+                if (!/[.!?]$/.test(txt) || /[:\[\]<>+%0-9/()]|\b(?:stat|status|class|skill|title|level|rank|tier|grade|attribute|passive|active|durum|sınıf|seviye|yetenek|unvan|güç|can|hız|zeka|mana|hp|mp)\b/i.test(txt)) {
+                    return true;
+                }
             }
 
             return false;
@@ -2901,6 +3006,8 @@ const reader = {
             const tag = el.tagName.toLowerCase();
             const txt = (el.innerText || el.textContent || '').trim();
             if (!txt || txt.length > 130) return false;
+            // Tek harfli drop-cap bloklarını başlık sanma
+            if (/^["“'‘«]?[A-ZÇĞİÖŞÜ]["”'’»]?$/.test(txt)) return false;
             if (/^h[1-6]$/.test(tag)) return true;
             if (idx <= 2) {
                 if (/^(?:chapter|bölüm|kısım|cilt|part|volume|vol\.?|prologue|epilogue|prolog|epilog|giriş|önsöz)\b/i.test(txt)) {
@@ -2925,7 +3032,7 @@ const reader = {
             return false;
         };
 
-        // C. Blokları Filtrele (Reklam/Watermark Satırlarını Ayıkla)
+        // C. Blokları Filtrele (Reklam/Watermark Satırlarını Ayıkla ve Karma <br> Bloklarını Çöz)
         const cleanBlocks = [];
         for (let i = 0; i < leafBlocks.length; i++) {
             const el = leafBlocks[i];
@@ -2946,7 +3053,43 @@ const reader = {
                 }
             }
             externalUrlRegex.lastIndex = 0;
+
+            // Eğer bir <p> içinde <br> ile normal anlatım cümlesi + ardından stat/italik satırlar bir arada yazılmışsa ayır
+            if (el.querySelector('br') && !isShortSpecialOrStatBlock(el, false)) {
+                const rawParts = el.innerHTML.split(/<br\s*\/?>/i).map(s => s.trim()).filter(Boolean);
+                if (rawParts.length >= 2) {
+                    const tempFirst = doc.createElement('p');
+                    tempFirst.innerHTML = rawParts[0];
+                    const tempSecond = doc.createElement('p');
+                    tempSecond.innerHTML = rawParts[1];
+                    if (!isShortSpecialOrStatBlock(tempFirst, false) && isShortSpecialOrStatBlock(tempSecond, false)) {
+                        cleanBlocks.push(tempFirst);
+                        const restP = doc.createElement('p');
+                        restP.innerHTML = rawParts.slice(1).join('<br>');
+                        cleanBlocks.push(restP);
+                        continue;
+                    }
+                }
+            }
+
             cleanBlocks.push(el);
+        }
+
+        // Eğer ayrı bir blok olarak tek harfli Drop-Cap ("A", "T" vb.) varsa sonraki metin bloğunun ilk kelimesiyle birleştir
+        for (let i = 0; i < cleanBlocks.length - 1; i++) {
+            const cur = cleanBlocks[i];
+            const nxt = cleanBlocks[i + 1];
+            if (isPureMediaBlock(cur) || isPureMediaBlock(nxt)) continue;
+            const curTxt = (cur.innerText || cur.textContent || '').trim();
+            if (/^["“'‘«]?[A-ZÇĞİÖŞÜ]["”'’»]?$/.test(curTxt)) {
+                this.normalizeDropCapsInBlock(nxt, doc);
+                const nxtTxt = (nxt.innerText || nxt.textContent || '').trim();
+                const joinWithSpace = (/^["“'‘«]?[AI]$/.test(curTxt) && /^[A-ZÇĞİÖŞÜ]/.test(nxtTxt));
+                nxt.innerHTML = curTxt + (joinWithSpace ? ' ' : '') + nxt.innerHTML.trimStart();
+                this.normalizeDropCapsInBlock(nxt, doc);
+                cleanBlocks.splice(i, 1);
+                i--;
+            }
         }
 
         if (cleanBlocks.length === 0) {
@@ -2989,10 +3132,12 @@ const reader = {
         const epigraphParts = [];
         while (cursor < cleanBlocks.length && isEpigraphCandidate(cleanBlocks[cursor])) {
             const epEl = cleanBlocks[cursor];
+            this.normalizeDropCapsInBlock(epEl, doc);
             // İçindeki <br> veya alt <p> etiketlerini tek paragraf akışında birleştir
             const innerPList = epEl.querySelectorAll('p');
             if (innerPList.length > 0) {
                 innerPList.forEach(ip => {
+                    this.normalizeDropCapsInBlock(ip, doc);
                     const h = ip.innerHTML.replace(/<br\s*\/?>/gi, ' ').trim();
                     if (h) epigraphParts.push(h);
                 });
@@ -3019,6 +3164,25 @@ const reader = {
             currentStatGroup = null;
         };
 
+        // Durum / stat / sınıf / yarı-italik bloklardan hemen önce gelen anlatım cümleleri
+        // 3 cümleden azsa (1 veya 2 cümle ise) bir önceki anlatım paragrafıyla birleştirir
+        const mergeShortNarrativeBeforeStat = () => {
+            while (newFragment.lastElementChild &&
+                   newFragment.lastElementChild.classList &&
+                   newFragment.lastElementChild.classList.contains('endlessr-narrative-p')) {
+                const lastP = newFragment.lastElementChild;
+                const sCount = lastP._sentenceCount || 1;
+                const prevP = lastP.previousElementSibling;
+                if (sCount < 3 && prevP && prevP.classList && prevP.classList.contains('endlessr-narrative-p')) {
+                    prevP.innerHTML = prevP.innerHTML.trim() + ' ' + lastP.innerHTML.trim();
+                    prevP._sentenceCount = (prevP._sentenceCount || 1) + sCount;
+                    lastP.remove();
+                } else {
+                    break;
+                }
+            }
+        };
+
         for (; cursor < cleanBlocks.length; cursor++) {
             const block = cleanBlocks[cursor];
 
@@ -3031,6 +3195,8 @@ const reader = {
             const prevWasStat = currentStatGroup !== null;
             if (isShortSpecialOrStatBlock(block, prevWasStat)) {
                 if (!currentStatGroup) {
+                    // Stat / durum / sınıf bloğu başlamadan hemen önceki paragraf < 3 cümle ise önceki paragrafla birleştir
+                    mergeShortNarrativeBeforeStat();
                     currentStatGroup = doc.createElement('div');
                     currentStatGroup.className = 'endlessr-stat-block';
                 }
@@ -3081,11 +3247,13 @@ const reader = {
                 continue;
             }
 
-            // 5. NORMAL HİKAYE PARAGRAFI: 3-4 Cümlelik Paragraflara Bölme + Inline İtalik/Özel Kelime Normalizasyonu
+            // 5. NORMAL HİKAYE PARAGRAFI: Drop-Cap Birleştirme + 3-4 Cümlelik Paragraflara Bölme
+            this.normalizeDropCapsInBlock(block, doc);
             const sentences = this.extractSentencesWithHtml(block);
             if (sentences.length <= 4) {
                 const p = doc.createElement('p');
                 p.className = 'endlessr-narrative-p';
+                p._sentenceCount = Math.max(1, sentences.length);
                 p.innerHTML = sentences.length > 0 ? sentences.join(' ') : block.innerHTML.trim();
                 newFragment.appendChild(p);
             } else {
@@ -3108,6 +3276,7 @@ const reader = {
                     const chunkHtml = sentences.slice(sIdx, sIdx + take).join(' ');
                     const p = doc.createElement('p');
                     p.className = 'endlessr-narrative-p';
+                    p._sentenceCount = take;
                     p.innerHTML = chunkHtml;
                     newFragment.appendChild(p);
                     sIdx += take;
