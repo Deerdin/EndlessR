@@ -118,9 +118,11 @@ const navHistory = {
 
 const app = {
     allLoadedBooks: [],
+    customFolders: [],
     currentFolderGroups: new Map(),
     activeFolderKey: null,
-    editingState: null, // { mode: 'book', book } veya { mode: 'folder', group }
+    managingFolderKey: null,
+    editingState: null, // { mode: 'book', book, targetFolderId }
 
     // Uygulama Başlangıcı
     async init() {
@@ -301,11 +303,40 @@ const app = {
         };
     },
 
-    groupBooksIntoLibraryItems(books) {
-        this.currentFolderGroups.clear();
-        if (!Array.isArray(books) || books.length === 0) return [];
+    sortAndDecorateFolderEntries(entries) {
+        entries.sort((a, b) => {
+            const vA = a.info.volumeNumber;
+            const vB = b.info.volumeNumber;
+            if (vA !== null && vB !== null && vA !== vB) {
+                return vA - vB;
+            }
+            if (vA !== null && vB === null) return -1;
+            if (vA === null && vB !== null) return 1;
+            return (a.book.addedAt || 0) - (b.book.addedAt || 0);
+        });
 
-        const analyzed = books.map(book => {
+        return entries.map((entry, idx) => {
+            const b = entry.book;
+            let badgeText = '';
+            if (b.volumeLabel && b.volumeLabel.trim()) {
+                const rawLbl = b.volumeLabel.trim();
+                badgeText = /^\d+$/.test(rawLbl) ? `${rawLbl}. Cilt` : rawLbl;
+            } else if (entry.info.volumeNumber !== null) {
+                badgeText = `${entry.info.volumeNumber}. Cilt`;
+            } else {
+                badgeText = `${idx + 1}. Cilt`;
+            }
+            return {
+                ...b,
+                _computedVolumeBadge: badgeText
+            };
+        });
+    },
+
+    groupBooksIntoLibraryItems(books, customFolders = []) {
+        this.currentFolderGroups.clear();
+
+        const analyzed = (books || []).map(book => {
             const info = this.extractVolumeAndBaseTitle(book);
             const normAuthor = this.normalizeTextKey(book.author || 'Bilinmeyen Yazar');
             const normExplicit = this.normalizeTextKey(info.explicitBaseTitle);
@@ -319,81 +350,126 @@ const app = {
             };
         });
 
-        // Aynı yazar altında numericBaseTitle frekansını say (Örn: "Kitap 1", "Kitap 2" varsa aynı klasöre girsin)
-        const numericCounts = new Map();
+        // 1. Manuel oluşturulan klasörleri hazırla
+        const customMap = new Map();
+        for (const cf of customFolders) {
+            if (!cf || !cf.id) continue;
+            customMap.set(cf.id, {
+                key: cf.id,
+                isCustom: true,
+                customFolderId: cf.id,
+                title: (cf.title || 'İsimsiz Klasör').trim(),
+                author: (cf.author || 'Klasör').trim(),
+                entries: [],
+                latestAddedAt: cf.createdAt || Date.now()
+            });
+        }
+
+        const remainingAnalyzed = [];
         for (const item of analyzed) {
+            const fId = item.book.folderId;
+            if (fId && customMap.has(fId)) {
+                const cGrp = customMap.get(fId);
+                cGrp.entries.push(item);
+                if ((item.book.addedAt || 0) > cGrp.latestAddedAt) {
+                    cGrp.latestAddedAt = item.book.addedAt || 0;
+                }
+            } else {
+                remainingAnalyzed.push(item);
+            }
+        }
+
+        // 2. Klasörden manuel çıkarılmamış (!unfoldered) kitaplar için otomatik seri/yazar eşleşmesi
+        const autoCandidates = remainingAnalyzed.filter(item => !item.book.unfoldered);
+        const unfolderedSingles = remainingAnalyzed.filter(item => !!item.book.unfoldered);
+
+        const numericCounts = new Map();
+        for (const item of autoCandidates) {
             const nKey = `${item.normAuthor}::${item.normNumeric}`;
             numericCounts.set(nKey, (numericCounts.get(nKey) || 0) + 1);
         }
 
-        const groupsMap = new Map();
-        for (const item of analyzed) {
+        const autoGroupsMap = new Map();
+        for (const item of autoCandidates) {
             const nKey = `${item.normAuthor}::${item.normNumeric}`;
             const useNumeric = (numericCounts.get(nKey) || 0) >= 2;
             const groupNormTitle = useNumeric ? item.normNumeric : item.normExplicit;
             const displayBaseTitle = useNumeric ? item.info.numericBaseTitle : item.info.explicitBaseTitle;
-            const groupKey = `${item.normAuthor}::${groupNormTitle}`;
+            const groupKey = `auto::${item.normAuthor}::${groupNormTitle}`;
 
-            if (!groupsMap.has(groupKey)) {
-                groupsMap.set(groupKey, {
+            // Eğer aynı başlık ve yazara sahip manuel bir klasör zaten varsa doğrudan oraya dahil et
+            let matchedCustom = null;
+            for (const cGrp of customMap.values()) {
+                if (this.normalizeTextKey(cGrp.title) === groupNormTitle &&
+                    (this.normalizeTextKey(cGrp.author) === item.normAuthor || cGrp.entries.length === 0)) {
+                    matchedCustom = cGrp;
+                    break;
+                }
+            }
+            if (matchedCustom) {
+                matchedCustom.entries.push(item);
+                if ((item.book.addedAt || 0) > matchedCustom.latestAddedAt) {
+                    matchedCustom.latestAddedAt = item.book.addedAt || 0;
+                }
+                continue;
+            }
+
+            if (!autoGroupsMap.has(groupKey)) {
+                autoGroupsMap.set(groupKey, {
                     key: groupKey,
+                    isCustom: false,
+                    customFolderId: null,
                     title: displayBaseTitle,
                     author: (item.book.author || 'Bilinmeyen Yazar').trim(),
                     entries: [],
                     latestAddedAt: 0
                 });
             }
-            const grp = groupsMap.get(groupKey);
+            const grp = autoGroupsMap.get(groupKey);
             grp.entries.push(item);
             if ((item.book.addedAt || 0) > grp.latestAddedAt) {
                 grp.latestAddedAt = item.book.addedAt || 0;
             }
-            // Daha kısa/temiz olan seri başlığını tercih et
             if (displayBaseTitle.length > 0 && displayBaseTitle.length < grp.title.length) {
                 grp.title = displayBaseTitle;
             }
         }
 
         const libraryItems = [];
-        for (const [groupKey, grp] of groupsMap.entries()) {
+
+        // Manuel klasörleri listeye ekle (0 veya 1 kitap olsa bile manuel oluşturulduğu için klasör olarak gözükür)
+        for (const [cKey, cGrp] of customMap.entries()) {
+            const sortedBooks = this.sortAndDecorateFolderEntries(cGrp.entries);
+            const folderGroup = {
+                key: cKey,
+                isCustom: true,
+                customFolderId: cGrp.customFolderId,
+                title: cGrp.title,
+                author: cGrp.author,
+                books: sortedBooks,
+                latestAddedAt: cGrp.latestAddedAt
+            };
+            this.currentFolderGroups.set(cKey, folderGroup);
+            libraryItems.push({
+                isFolder: true,
+                latestAddedAt: cGrp.latestAddedAt,
+                group: folderGroup
+            });
+        }
+
+        // Otomatik grupları listeye ekle (2+ kitap varsa klasör, 1 kitap varsa tekil kart)
+        for (const [groupKey, grp] of autoGroupsMap.entries()) {
             if (grp.entries.length >= 2) {
-                // Ciltleri sırala: önce cilt numarası (varsa), yoksa eklenme tarihi (eskiden yeniye 1, 2, 3...)
-                grp.entries.sort((a, b) => {
-                    const vA = a.info.volumeNumber;
-                    const vB = b.info.volumeNumber;
-                    if (vA !== null && vB !== null && vA !== vB) {
-                        return vA - vB;
-                    }
-                    if (vA !== null && vB === null) return -1;
-                    if (vA === null && vB !== null) return 1;
-                    return (a.book.addedAt || 0) - (b.book.addedAt || 0);
-                });
-
-                const sortedBooks = grp.entries.map((entry, idx) => {
-                    const b = entry.book;
-                    let badgeText = '';
-                    if (b.volumeLabel && b.volumeLabel.trim()) {
-                        const rawLbl = b.volumeLabel.trim();
-                        badgeText = /^\d+$/.test(rawLbl) ? `${rawLbl}. Cilt` : rawLbl;
-                    } else if (entry.info.volumeNumber !== null) {
-                        badgeText = `${entry.info.volumeNumber}. Cilt`;
-                    } else {
-                        badgeText = `${idx + 1}. Cilt`;
-                    }
-                    return {
-                        ...b,
-                        _computedVolumeBadge: badgeText
-                    };
-                });
-
+                const sortedBooks = this.sortAndDecorateFolderEntries(grp.entries);
                 const folderGroup = {
                     key: groupKey,
+                    isCustom: false,
+                    customFolderId: null,
                     title: grp.title,
                     author: grp.author,
                     books: sortedBooks,
                     latestAddedAt: grp.latestAddedAt
                 };
-
                 this.currentFolderGroups.set(groupKey, folderGroup);
                 libraryItems.push({
                     isFolder: true,
@@ -414,7 +490,20 @@ const app = {
             }
         }
 
-        // Ana sayfa sıralaması: en son eklenen / güncellenen üstte
+        // Klasörden manuel çıkarılmış tekil kitapları ekle
+        for (const item of unfolderedSingles) {
+            const singleBook = item.book;
+            if (singleBook.volumeLabel && singleBook.volumeLabel.trim()) {
+                const rawLbl = singleBook.volumeLabel.trim();
+                singleBook._computedVolumeBadge = /^\d+$/.test(rawLbl) ? `${rawLbl}. Cilt` : rawLbl;
+            }
+            libraryItems.push({
+                isFolder: false,
+                latestAddedAt: singleBook.addedAt || 0,
+                book: singleBook
+            });
+        }
+
         libraryItems.sort((a, b) => b.latestAddedAt - a.latestAddedAt);
         return libraryItems;
     },
@@ -430,9 +519,11 @@ const app = {
         if (profileBookGrid) profileBookGrid.innerHTML = '';
         
         const books = await booksDb.getAllBooks();
+        const customFolders = await settingsDb.get('customFolders', []) || [];
         this.allLoadedBooks = books;
+        this.customFolders = Array.isArray(customFolders) ? customFolders : [];
 
-        if (books.length === 0) {
+        if (books.length === 0 && this.customFolders.length === 0) {
             if (emptyState) emptyState.style.display = 'flex';
             if (statsSummary) statsSummary.textContent = "Kütüphanede kitap bulunmuyor.";
             this.closeFolderModal();
@@ -447,7 +538,7 @@ const app = {
                 statsSummary.textContent = `${totalBooks} kitap yüklü. (${readingBooks} okunuyor, ${readBooks} bitti)`;
             }
 
-            const libraryItems = this.groupBooksIntoLibraryItems(books);
+            const libraryItems = this.groupBooksIntoLibraryItems(books, this.customFolders);
             libraryItems.forEach(item => {
                 if (item.isFolder) {
                     const folderCard = this.createFolderCard(item.group);
@@ -461,10 +552,20 @@ const app = {
             // Açık bir klasör modalı varsa içeriğini canlı güncelle
             if (this.activeFolderKey) {
                 const updatedGroup = this.currentFolderGroups.get(this.activeFolderKey);
-                if (updatedGroup) {
+                if (updatedGroup && (updatedGroup.isCustom || updatedGroup.books.length > 0)) {
                     this.renderFolderModalContent(updatedGroup);
                 } else {
                     this.closeFolderModal();
+                }
+            }
+
+            // Açık bir klasör yönetim modalı varsa onu da canlı güncelle
+            if (this.managingFolderKey) {
+                const updatedManageGroup = this.currentFolderGroups.get(this.managingFolderKey);
+                if (updatedManageGroup && (updatedManageGroup.isCustom || updatedManageGroup.books.length > 0)) {
+                    this.renderFolderManageModalContent(updatedManageGroup);
+                } else {
+                    this.closeFolderManageModal();
                 }
             }
         }
@@ -506,18 +607,138 @@ const app = {
         }
     },
 
-    // Klasördeki Tüm Ciltleri Silme İşlemi
+    // Klasörü ve İçindeki Ciltleri Silme İşlemi
     async deleteFolderGroup(group) {
-        if (!group || !group.books || group.books.length === 0) return;
-        if (confirm(`"${group.title}" klasöründeki tüm ${group.books.length} cildi silmek istediğinize emin misiniz?`)) {
-            for (const b of group.books) {
-                await booksDb.deleteBook(b.id);
+        if (!group) return;
+        const bookCount = group.books ? group.books.length : 0;
+        const msg = bookCount > 0
+            ? `"${group.title}" klasörünü ve içindeki ${bookCount} kitabı silmek istediğinize emin misiniz?`
+            : `"${group.title}" klasörünü silmek istediğinize emin misiniz?`;
+
+        if (confirm(msg)) {
+            if (group.books && group.books.length > 0) {
+                for (const b of group.books) {
+                    await booksDb.deleteBook(b.id);
+                }
+            }
+            if (group.isCustom && group.customFolderId) {
+                this.customFolders = this.customFolders.filter(cf => cf.id !== group.customFolderId);
+                await settingsDb.set('customFolders', this.customFolders);
             }
             if (this.activeFolderKey === group.key) {
                 this.closeFolderModal();
             }
+            if (this.managingFolderKey === group.key) {
+                this.closeFolderManageModal();
+            }
             await this.loadLibrary();
         }
+    },
+
+    // Manuel Klasör Oluşturma Modalını Aç / Kaydet
+    openCreateFolderModal() {
+        const modal = document.getElementById('create-folder-modal');
+        const titleInput = document.getElementById('create-folder-title-input');
+        const authorInput = document.getElementById('create-folder-author-input');
+        const listEl = document.getElementById('create-folder-books-list');
+
+        if (titleInput) titleInput.value = '';
+        if (authorInput) authorInput.value = '';
+
+        if (listEl) {
+            listEl.innerHTML = '';
+            if (this.allLoadedBooks.length === 0) {
+                listEl.innerHTML = `<p style="font-size: 12px; color: var(--text-muted); text-align: center; padding: 12px;">Henüz kütüphanede kitap yok. Boş klasör oluşturup sonradan kitap ekleyebilirsiniz.</p>`;
+            } else {
+                this.allLoadedBooks.forEach(book => {
+                    const row = document.createElement('label');
+                    row.className = 'folder-book-row';
+                    row.style.cursor = 'pointer';
+
+                    let thumbSrc = '';
+                    if (book.coverUrl && !book.coverUrl.startsWith('blob:')) {
+                        thumbSrc = book.coverUrl;
+                    } else {
+                        thumbSrc = utils.generateGradientPlaceholder(book.title, book.author);
+                    }
+
+                    row.innerHTML = `
+                        <div class="folder-book-row-main">
+                            <input type="checkbox" class="create-folder-book-checkbox" value="${book.id}" style="width: 18px; height: 18px; accent-color: var(--accent-color); flex-shrink: 0;">
+                            <img src="${thumbSrc}" alt="${book.title}" class="folder-book-thumb">
+                            <div class="folder-book-row-info">
+                                <span class="folder-book-row-title">${book.title}</span>
+                                <span class="folder-book-row-sub">${book.author}</span>
+                            </div>
+                        </div>
+                    `;
+
+                    const cb = row.querySelector('.create-folder-book-checkbox');
+                    if (cb) {
+                        cb.addEventListener('change', () => {
+                            if (cb.checked) {
+                                if (titleInput && !titleInput.value.trim()) {
+                                    const info = this.extractVolumeAndBaseTitle(book);
+                                    titleInput.value = info.explicitBaseTitle || book.title;
+                                }
+                                if (authorInput && !authorInput.value.trim()) {
+                                    authorInput.value = book.author || '';
+                                }
+                            }
+                        });
+                    }
+
+                    listEl.appendChild(row);
+                });
+            }
+        }
+
+        if (modal) {
+            modal.style.display = 'flex';
+            if (titleInput) titleInput.focus();
+        }
+        lucide.createIcons();
+    },
+
+    closeCreateFolderModal() {
+        const modal = document.getElementById('create-folder-modal');
+        if (modal) modal.style.display = 'none';
+    },
+
+    async saveCreateFolder() {
+        const titleInput = document.getElementById('create-folder-title-input');
+        const authorInput = document.getElementById('create-folder-author-input');
+        const title = (titleInput ? titleInput.value : '').trim();
+        const author = (authorInput ? authorInput.value : '').trim() || 'Klasör';
+
+        if (!title) {
+            alert('Lütfen bir klasör adı girin.');
+            return;
+        }
+
+        const newFolder = {
+            id: 'folder_' + utils.generateId(),
+            title,
+            author,
+            createdAt: Date.now()
+        };
+
+        this.customFolders.push(newFolder);
+        await settingsDb.set('customFolders', this.customFolders);
+
+        const checkedBoxes = document.querySelectorAll('.create-folder-book-checkbox:checked');
+        let idx = 1;
+        for (const cb of checkedBoxes) {
+            const bookId = cb.value;
+            await booksDb.updateBookMetadata(bookId, {
+                folderId: newFolder.id,
+                unfoldered: false
+            });
+            idx++;
+        }
+
+        this.closeCreateFolderModal();
+        await this.loadLibrary();
     },
 
     // Klasör Görünümü Modalını Aç / Kapat
@@ -545,10 +766,19 @@ const app = {
 
         if (gridEl) {
             gridEl.innerHTML = '';
-            group.books.forEach(book => {
-                const card = this.createBookCard(book, { inFolder: true, seriesBaseTitle: group.title });
-                gridEl.appendChild(card);
-            });
+            if (group.books.length === 0) {
+                gridEl.innerHTML = `
+                    <div class="empty-state" style="display: flex; grid-column: 1 / -1; padding: 30px 10px;">
+                        <i data-lucide="folder-open" class="empty-icon" style="width: 48px; height: 48px;"></i>
+                        <p>Bu klasörde henüz kitap yok. Sağ üstteki düzenleme (kalem) butonuna basarak klasöre kitap ekleyebilirsiniz.</p>
+                    </div>
+                `;
+            } else {
+                group.books.forEach(book => {
+                    const card = this.createBookCard(book, { inFolder: true, seriesBaseTitle: group.title });
+                    gridEl.appendChild(card);
+                });
+            }
         }
         lucide.createIcons();
     },
@@ -561,10 +791,298 @@ const app = {
         }
     },
 
-    // Tekil Kitap Düzenleme Modalını Aç
+    // Klasör İçi Kitapları Yatay Barlarla Yönetme / Düzenleme Modalı
+    openFolderManageModal(groupKey) {
+        const group = this.currentFolderGroups.get(groupKey);
+        if (!group) return;
+
+        this.managingFolderKey = groupKey;
+        this.renderFolderManageModalContent(group);
+
+        const modal = document.getElementById('folder-manage-modal');
+        if (modal) {
+            modal.style.display = 'flex';
+        }
+        lucide.createIcons();
+    },
+
+    closeFolderManageModal() {
+        this.managingFolderKey = null;
+        const modal = document.getElementById('folder-manage-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    },
+
+    renderFolderManageModalContent(group) {
+        const titleInput = document.getElementById('manage-folder-title-input');
+        const authorInput = document.getElementById('manage-folder-author-input');
+        const booksListEl = document.getElementById('folder-manage-books-list');
+        const addSectionEl = document.getElementById('folder-manage-add-section');
+        const availableListEl = document.getElementById('folder-manage-available-list');
+
+        if (titleInput) titleInput.value = group.title || '';
+        if (authorInput) authorInput.value = group.author || '';
+
+        if (booksListEl) {
+            booksListEl.innerHTML = '';
+            if (group.books.length === 0) {
+                booksListEl.innerHTML = `<p style="font-size: 12px; color: var(--text-muted); text-align: center; padding: 10px;">Klasörde henüz kitap bulunmuyor.</p>`;
+            } else {
+                group.books.forEach(book => {
+                    const row = document.createElement('div');
+                    row.className = 'folder-book-row';
+
+                    let thumbSrc = '';
+                    if (book.coverUrl && !book.coverUrl.startsWith('blob:')) {
+                        thumbSrc = book.coverUrl;
+                    } else {
+                        thumbSrc = utils.generateGradientPlaceholder(book.title, book.author);
+                    }
+
+                    const isFav = !!book.isFavorite;
+                    const badgeLabel = book._computedVolumeBadge || '';
+
+                    row.innerHTML = `
+                        <div class="folder-book-row-main">
+                            <img src="${thumbSrc}" alt="${book.title}" class="folder-book-thumb">
+                            <div class="folder-book-row-info">
+                                <span class="folder-book-row-title">${book.title}</span>
+                                <span class="folder-book-row-sub">${badgeLabel ? badgeLabel + ' • ' : ''}${book.author}</span>
+                            </div>
+                            <div class="folder-book-row-actions">
+                                <button type="button" class="row-action-btn btn-row-edit" title="Başlık / Yazar / Cilt Düzenle">
+                                    <i data-lucide="edit-2" style="width: 14px; height: 14px;"></i>
+                                </button>
+                                <button type="button" class="row-action-btn btn-row-fav ${isFav ? 'active-fav' : ''}" title="Favorilere Ekle/Çıkar">
+                                    <i data-lucide="star" style="width: 14px; height: 14px; ${isFav ? 'fill: #f59e0b;' : ''}"></i>
+                                </button>
+                                <button type="button" class="row-action-btn btn-row-unfolder" title="Klasörden Çıkar">
+                                    <i data-lucide="folder-minus" style="width: 14px; height: 14px;"></i>
+                                </button>
+                                <button type="button" class="row-action-btn btn-row-delete" title="Kitabı Sil">
+                                    <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="folder-book-inline-edit">
+                            <div class="input-group">
+                                <label>Kitap Başlığı</label>
+                                <input type="text" class="inline-book-title" value="${(book.title || '').replace(/"/g, '&quot;')}" placeholder="Kitap başlığı...">
+                            </div>
+                            <div class="folder-book-inline-grid">
+                                <div class="input-group">
+                                    <label>Yazar</label>
+                                    <input type="text" class="inline-book-author" value="${(book.author || '').replace(/"/g, '&quot;')}" placeholder="Yazar...">
+                                </div>
+                                <div class="input-group">
+                                    <label>Cilt Etiketi</label>
+                                    <input type="text" class="inline-book-volume" value="${(book.volumeLabel || badgeLabel || '').replace(/"/g, '&quot;')}" placeholder="Örn: 1. Cilt">
+                                </div>
+                            </div>
+                            <button type="button" class="action-btn btn-inline-save" style="padding: 8px; font-size: 12px;">
+                                Değişiklikleri Kaydet
+                            </button>
+                        </div>
+                    `;
+
+                    const btnRowEdit = row.querySelector('.btn-row-edit');
+                    const inlineEditBox = row.querySelector('.folder-book-inline-edit');
+                    if (btnRowEdit && inlineEditBox) {
+                        btnRowEdit.onclick = () => {
+                            const isOpen = inlineEditBox.classList.toggle('open');
+                            btnRowEdit.classList.toggle('active', isOpen);
+                        };
+                    }
+
+                    const btnInlineSave = row.querySelector('.btn-inline-save');
+                    if (btnInlineSave) {
+                        btnInlineSave.onclick = async () => {
+                            const newBookTitle = row.querySelector('.inline-book-title').value.trim();
+                            const newBookAuthor = row.querySelector('.inline-book-author').value.trim() || 'Bilinmeyen Yazar';
+                            const newBookVolume = row.querySelector('.inline-book-volume').value.trim();
+                            if (!newBookTitle) {
+                                alert('Kitap başlığı boş bırakılamaz.');
+                                return;
+                            }
+                            // Eğer klasör otomatik gruplanmışsa ve tek bir kitabın başlığı değiştirildiyse bile bu klasörde kalması için gerekirse klasörü sabitle
+                            let targetFolderId = book.folderId;
+                            if (group.isCustom && group.customFolderId) {
+                                targetFolderId = group.customFolderId;
+                            } else if (!group.isCustom) {
+                                const ensuredId = await this.ensureCustomFolderForGroup(group);
+                                targetFolderId = ensuredId;
+                            }
+                            await booksDb.updateBookMetadata(book.id, {
+                                title: newBookTitle,
+                                author: newBookAuthor,
+                                volumeLabel: newBookVolume,
+                                folderId: targetFolderId,
+                                unfoldered: false
+                            });
+                            await this.loadLibrary();
+                        };
+                    }
+
+                    const btnRowFav = row.querySelector('.btn-row-fav');
+                    if (btnRowFav) {
+                        btnRowFav.onclick = async () => {
+                            await booksDb.updateBookMetadata(book.id, {
+                                isFavorite: !book.isFavorite
+                            });
+                            await this.loadLibrary();
+                        };
+                    }
+
+                    const btnRowUnfolder = row.querySelector('.btn-row-unfolder');
+                    if (btnRowUnfolder) {
+                        btnRowUnfolder.onclick = async () => {
+                            await booksDb.updateBookMetadata(book.id, {
+                                folderId: null,
+                                unfoldered: true
+                            });
+                            await this.loadLibrary();
+                        };
+                    }
+
+                    const btnRowDelete = row.querySelector('.btn-row-delete');
+                    if (btnRowDelete) {
+                        btnRowDelete.onclick = async () => {
+                            if (confirm(`"${book.title}" kitabını tamamen silmek istediğinize emin misiniz?`)) {
+                                await booksDb.deleteBook(book.id);
+                                await this.loadLibrary();
+                            }
+                        };
+                    }
+
+                    booksListEl.appendChild(row);
+                });
+            }
+        }
+
+        // Bu klasörde olmayan diğer kitapları "Klasöre Ekle" satırları olarak listele
+        if (addSectionEl && availableListEl) {
+            const inFolderIds = new Set(group.books.map(b => b.id));
+            const outsideBooks = this.allLoadedBooks.filter(b => !inFolderIds.has(b.id));
+
+            if (outsideBooks.length === 0) {
+                addSectionEl.style.display = 'none';
+            } else {
+                addSectionEl.style.display = 'flex';
+                availableListEl.innerHTML = '';
+
+                outsideBooks.forEach(book => {
+                    const row = document.createElement('div');
+                    row.className = 'folder-book-row';
+
+                    let thumbSrc = '';
+                    if (book.coverUrl && !book.coverUrl.startsWith('blob:')) {
+                        thumbSrc = book.coverUrl;
+                    } else {
+                        thumbSrc = utils.generateGradientPlaceholder(book.title, book.author);
+                    }
+
+                    row.innerHTML = `
+                        <div class="folder-book-row-main">
+                            <img src="${thumbSrc}" alt="${book.title}" class="folder-book-thumb">
+                            <div class="folder-book-row-info">
+                                <span class="folder-book-row-title">${book.title}</span>
+                                <span class="folder-book-row-sub">${book.author}</span>
+                            </div>
+                            <div class="folder-book-row-actions">
+                                <button type="button" class="row-action-btn btn-row-add" title="Bu Klasöre Ekle">
+                                    <i data-lucide="plus" style="width: 13px; height: 13px;"></i> Ekle
+                                </button>
+                            </div>
+                        </div>
+                    `;
+
+                    const btnAdd = row.querySelector('.btn-row-add');
+                    if (btnAdd) {
+                        btnAdd.onclick = async () => {
+                            let targetFolderId = group.customFolderId;
+                            if (!group.isCustom || !targetFolderId) {
+                                targetFolderId = await this.ensureCustomFolderForGroup(group);
+                            }
+                            await booksDb.updateBookMetadata(book.id, {
+                                folderId: targetFolderId,
+                                unfoldered: false
+                            });
+                            await this.loadLibrary();
+                        };
+                    }
+
+                    availableListEl.appendChild(row);
+                });
+            }
+        }
+
+        lucide.createIcons();
+    },
+
+    // Otomatik oluşmuş bir klasörü kalıcı manuel klasöre dönüştürür (kitap ekleme / bağımsız isimlendirme için)
+    async ensureCustomFolderForGroup(group) {
+        if (group.isCustom && group.customFolderId) {
+            return group.customFolderId;
+        }
+        const newFolder = {
+            id: 'folder_' + utils.generateId(),
+            title: group.title,
+            author: group.author,
+            createdAt: group.latestAddedAt || Date.now()
+        };
+        this.customFolders.push(newFolder);
+        await settingsDb.set('customFolders', this.customFolders);
+
+        for (const b of group.books) {
+            await booksDb.updateBookMetadata(b.id, {
+                folderId: newFolder.id,
+                unfoldered: false
+            });
+        }
+
+        if (this.activeFolderKey === group.key) {
+            this.activeFolderKey = newFolder.id;
+        }
+        if (this.managingFolderKey === group.key) {
+            this.managingFolderKey = newFolder.id;
+        }
+        group.isCustom = true;
+        group.customFolderId = newFolder.id;
+        group.key = newFolder.id;
+        return newFolder.id;
+    },
+
+    async saveFolderMetaFromManageModal() {
+        if (!this.managingFolderKey) return;
+        const group = this.currentFolderGroups.get(this.managingFolderKey);
+        if (!group) return;
+
+        const titleInput = document.getElementById('manage-folder-title-input');
+        const authorInput = document.getElementById('manage-folder-author-input');
+        const newTitle = (titleInput ? titleInput.value : '').trim();
+        const newAuthor = (authorInput ? authorInput.value : '').trim() || 'Bilinmeyen Yazar';
+
+        if (!newTitle) {
+            alert('Klasör başlığı boş bırakılamaz.');
+            return;
+        }
+
+        const folderId = await this.ensureCustomFolderForGroup(group);
+        const targetFolder = this.customFolders.find(cf => cf.id === folderId);
+        if (targetFolder) {
+            targetFolder.title = newTitle;
+            targetFolder.author = newAuthor;
+            await settingsDb.set('customFolders', this.customFolders);
+        }
+
+        await this.loadLibrary();
+    },
+
+    // Tekil Kitap Düzenleme Modalını Aç (Ana Sayfadaki Tekil Kitaplar İçin)
     openEditBookModal(book) {
         if (!book) return;
-        this.editingState = { mode: 'book', book };
+        this.editingState = { mode: 'book', book, selectedFolderId: book.folderId || null };
 
         const modal = document.getElementById('edit-book-modal');
         const heading = document.getElementById('edit-book-modal-heading');
@@ -583,44 +1101,39 @@ const app = {
             volumeInput.value = book.volumeLabel || '';
         }
 
-        // Mevcut diğer kitap/klasör çiftlerini hızlı seçim çipi olarak göster
+        // Mevcut klasörleri ve diğer kitapları hızlı klasöre dahil etme çipi olarak göster
         if (quickWrap && quickList) {
             quickList.innerHTML = '';
-            const seenPairs = new Map();
+            const chipItems = [];
 
-            // Önce mevcut klasörleri ekle
             for (const grp of this.currentFolderGroups.values()) {
-                const pairKey = `${this.normalizeTextKey(grp.author)}::${this.normalizeTextKey(grp.title)}`;
-                seenPairs.set(pairKey, { title: grp.title, author: grp.author, isFolder: true, count: grp.books.length });
-            }
-            // Sonra diğer tekil kitapları ekle
-            for (const b of this.allLoadedBooks) {
-                if (b.id === book.id) continue;
-                const info = this.extractVolumeAndBaseTitle(b);
-                const pairKey = `${this.normalizeTextKey(b.author)}::${this.normalizeTextKey(info.explicitBaseTitle)}`;
-                if (!seenPairs.has(pairKey)) {
-                    seenPairs.set(pairKey, {
-                        title: info.explicitBaseTitle,
-                        author: (b.author || 'Bilinmeyen Yazar').trim(),
-                        isFolder: false,
-                        count: 1
-                    });
-                }
+                chipItems.push({
+                    title: grp.title,
+                    author: grp.author,
+                    isFolder: true,
+                    group: grp,
+                    count: grp.books.length
+                });
             }
 
-            if (seenPairs.size > 0) {
+            if (chipItems.length > 0) {
                 quickWrap.style.display = 'block';
-                for (const item of seenPairs.values()) {
+                for (const item of chipItems) {
                     const chip = document.createElement('button');
                     chip.type = 'button';
                     chip.className = 'quick-series-chip';
-                    chip.innerHTML = `<i data-lucide="${item.isFolder ? 'folder' : 'book'}" style="width: 12px; height: 12px;"></i><span>${item.title} (${item.author})</span>`;
-                    chip.onclick = () => {
-                        if (titleInput) titleInput.value = item.title;
-                        if (authorInput) authorInput.value = item.author;
-                        if (volumeInput && !volumeInput.value.trim()) {
-                            volumeInput.value = `${item.count + 1}. Cilt`;
+                    chip.innerHTML = `<i data-lucide="folder" style="width: 12px; height: 12px;"></i><span>${item.title} (${item.author})</span>`;
+                    chip.onclick = async () => {
+                        let targetFolderId = item.group.customFolderId;
+                        if (!item.group.isCustom || !targetFolderId) {
+                            targetFolderId = await this.ensureCustomFolderForGroup(item.group);
                         }
+                        await booksDb.updateBookMetadata(book.id, {
+                            folderId: targetFolderId,
+                            unfoldered: false
+                        });
+                        this.closeEditBookModal();
+                        await this.loadLibrary();
                     };
                     quickList.appendChild(chip);
                 }
@@ -636,31 +1149,6 @@ const app = {
         lucide.createIcons();
     },
 
-    // Klasör Başlığı ve Yazarını Toplu Düzenleme Modalını Aç
-    openEditFolderModal(group) {
-        if (!group) return;
-        this.editingState = { mode: 'folder', group };
-
-        const modal = document.getElementById('edit-book-modal');
-        const heading = document.getElementById('edit-book-modal-heading');
-        const titleInput = document.getElementById('edit-book-title-input');
-        const authorInput = document.getElementById('edit-book-author-input');
-        const volumeGroup = document.getElementById('edit-book-volume-group');
-        const quickWrap = document.getElementById('edit-book-quick-series-wrap');
-
-        if (heading) heading.textContent = `Klasörü Düzenle (${group.books.length} Cilt)`;
-        if (titleInput) titleInput.value = group.title || '';
-        if (authorInput) authorInput.value = group.author || '';
-        if (volumeGroup) volumeGroup.style.display = 'none';
-        if (quickWrap) quickWrap.style.display = 'none';
-
-        if (modal) {
-            modal.style.display = 'flex';
-            if (titleInput) titleInput.focus();
-        }
-        lucide.createIcons();
-    },
-
     closeEditBookModal() {
         this.editingState = null;
         const modal = document.getElementById('edit-book-modal');
@@ -668,7 +1156,7 @@ const app = {
     },
 
     async saveBookEdit() {
-        if (!this.editingState) return;
+        if (!this.editingState || this.editingState.mode !== 'book') return;
 
         const titleInput = document.getElementById('edit-book-title-input');
         const authorInput = document.getElementById('edit-book-author-input');
@@ -679,36 +1167,20 @@ const app = {
         const newVolume = (volumeInput ? volumeInput.value : '').trim();
 
         if (!newTitle) {
-            alert('Lütfen geçerli bir kitap/seri başlığı girin.');
+            alert('Lütfen geçerli bir kitap başlığı girin.');
             return;
         }
 
-        if (this.editingState.mode === 'book') {
-            const book = this.editingState.book;
-            await booksDb.updateBookMetadata(book.id, {
-                title: newTitle,
-                author: newAuthor,
-                volumeLabel: newVolume
-            });
-        } else if (this.editingState.mode === 'folder') {
-            const group = this.editingState.group;
-            for (let i = 0; i < group.books.length; i++) {
-                const b = group.books[i];
-                const preservedVolume = (b.volumeLabel && b.volumeLabel.trim())
-                    ? b.volumeLabel.trim()
-                    : (b._computedVolumeBadge || `${i + 1}. Cilt`);
-                await booksDb.updateBookMetadata(b.id, {
-                    title: newTitle,
-                    author: newAuthor,
-                    volumeLabel: preservedVolume
-                });
-            }
-            // Yeni klasör anahtarını aktif tut
-            const newGroupKey = `${this.normalizeTextKey(newAuthor)}::${this.normalizeTextKey(newTitle)}`;
-            if (this.activeFolderKey === group.key) {
-                this.activeFolderKey = newGroupKey;
-            }
-        }
+        const book = this.editingState.book;
+        const titleOrAuthorChanged = (newTitle !== book.title) || (newAuthor !== book.author);
+
+        await booksDb.updateBookMetadata(book.id, {
+            title: newTitle,
+            author: newAuthor,
+            volumeLabel: newVolume,
+            // Başlık veya yazar manuel değiştirildiyse otomatik klasörlemeye tekrar izin ver
+            unfoldered: titleOrAuthorChanged ? false : book.unfoldered
+        });
 
         this.closeEditBookModal();
         await this.loadLibrary();
@@ -1124,6 +1596,14 @@ const app = {
             });
         }
 
+        // Manuel Klasör Oluşturma Butonu Tıklaması
+        const btnCreateFolder = document.getElementById('btn-home-create-folder');
+        if (btnCreateFolder) {
+            btnCreateFolder.addEventListener('click', () => {
+                this.openCreateFolderModal();
+            });
+        }
+
         // Kitap Silme Modu Butonu Tıklaması
         const btnDeleteMode = document.getElementById('btn-home-delete-mode');
         if (btnDeleteMode) {
@@ -1148,7 +1628,7 @@ const app = {
             });
         }
 
-        // Kitap / Klasör Başlığı Düzenleme Modalı Dinleyicileri
+        // Tekil Kitap Başlığı Düzenleme Modalı Dinleyicileri
         const btnCloseEditBookModal = document.getElementById('btn-close-edit-book-modal');
         if (btnCloseEditBookModal) {
             btnCloseEditBookModal.addEventListener('click', () => {
@@ -1167,6 +1647,28 @@ const app = {
         if (btnSaveBookEdit) {
             btnSaveBookEdit.addEventListener('click', () => {
                 this.saveBookEdit();
+            });
+        }
+
+        // Manuel Klasör Oluşturma Modalı Dinleyicileri
+        const btnCloseCreateFolderModal = document.getElementById('btn-close-create-folder-modal');
+        if (btnCloseCreateFolderModal) {
+            btnCloseCreateFolderModal.addEventListener('click', () => {
+                this.closeCreateFolderModal();
+            });
+        }
+        const createFolderModalOverlay = document.getElementById('create-folder-modal');
+        if (createFolderModalOverlay) {
+            createFolderModalOverlay.addEventListener('click', (e) => {
+                if (e.target === createFolderModalOverlay) {
+                    this.closeCreateFolderModal();
+                }
+            });
+        }
+        const btnSaveCreateFolder = document.getElementById('btn-save-create-folder');
+        if (btnSaveCreateFolder) {
+            btnSaveCreateFolder.addEventListener('click', () => {
+                this.saveCreateFolder();
             });
         }
 
@@ -1189,9 +1691,30 @@ const app = {
         if (btnEditFolderMeta) {
             btnEditFolderMeta.addEventListener('click', () => {
                 if (this.activeFolderKey) {
-                    const grp = this.currentFolderGroups.get(this.activeFolderKey);
-                    if (grp) this.openEditFolderModal(grp);
+                    this.openFolderManageModal(this.activeFolderKey);
                 }
+            });
+        }
+
+        // Klasör İçi Yatay Barlarla Kitap Yönetimi Modalı Dinleyicileri
+        const btnCloseFolderManageModal = document.getElementById('btn-close-folder-manage-modal');
+        if (btnCloseFolderManageModal) {
+            btnCloseFolderManageModal.addEventListener('click', () => {
+                this.closeFolderManageModal();
+            });
+        }
+        const folderManageModalOverlay = document.getElementById('folder-manage-modal');
+        if (folderManageModalOverlay) {
+            folderManageModalOverlay.addEventListener('click', (e) => {
+                if (e.target === folderManageModalOverlay) {
+                    this.closeFolderManageModal();
+                }
+            });
+        }
+        const btnSaveFolderMeta = document.getElementById('btn-save-folder-meta');
+        if (btnSaveFolderMeta) {
+            btnSaveFolderMeta.addEventListener('click', () => {
+                this.saveFolderMetaFromManageModal();
             });
         }
 
@@ -1802,7 +2325,7 @@ const app = {
         });
     },
 
-    // 7A. Klasör Kartı Oluşturma (Çoklu Ciltli Seriler İçin)
+    // 7A. Klasör Kartı Oluşturma (Çoklu Ciltli Seriler veya Manuel Klasörler İçin)
     createFolderCard(group) {
         const card = document.createElement('div');
         card.className = 'book-card folder-card glass';
@@ -1818,16 +2341,16 @@ const app = {
         }
 
         const totalVolumes = group.books.length;
-        const avgProgress = Math.round(
-            group.books.reduce((acc, b) => acc + (b.progressPercent || 0), 0) / totalVolumes
-        );
+        const avgProgress = totalVolumes > 0
+            ? Math.round(group.books.reduce((acc, b) => acc + (b.progressPercent || 0), 0) / totalVolumes)
+            : 0;
         const completedCount = group.books.filter(b => (b.progressPercent || 0) >= 95).length;
 
         card.innerHTML = `
             <button class="btn-delete-book" title="Klasörü Sil">
                 <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
             </button>
-            <button class="btn-edit-book" title="Klasör Başlığını / Yazarı Düzenle" style="right: 6px;">
+            <button class="btn-edit-book" title="Klasörü ve Kitapları Düzenle" style="right: 6px;">
                 <i data-lucide="edit-2" style="width: 13px; height: 13px;"></i>
             </button>
             <div class="folder-stack-wrapper">
@@ -1865,7 +2388,7 @@ const app = {
         if (btnEdit) {
             btnEdit.onclick = (e) => {
                 e.stopPropagation();
-                this.openEditFolderModal(group);
+                this.openFolderManageModal(group.key);
             };
         }
 
@@ -1884,10 +2407,6 @@ const app = {
     createBookCard(book, options = {}) {
         const card = document.createElement('div');
         card.className = 'book-card glass';
-        if (options.inFolder) {
-            card.classList.add('delete-mode'); // Klasör içinde silme kolaylığı için veya normal görünüm
-            card.classList.remove('delete-mode');
-        }
         
         let coverHtml = '';
         if (book.coverUrl && !book.coverUrl.startsWith('blob:')) {
@@ -1902,7 +2421,7 @@ const app = {
             ? `<span class="volume-badge">${book._computedVolumeBadge}</span>`
             : '';
 
-        // Klasör içindeyken başlık seri adıyla birebir aynıysa "Cilt X - Başlık" şeklinde net göster
+        // Klasör içindeyken başlık seri adıyla birebir aynıysa "Cilt X • Başlık" şeklinde net göster
         let displayTitle = book.title;
         if (options.inFolder && book._computedVolumeBadge) {
             const normBookTitle = this.normalizeTextKey(book.title);
@@ -1912,8 +2431,9 @@ const app = {
             }
         }
 
-        card.innerHTML = `
-            <button class="btn-delete-book" title="Kitabı Sil" ${options.inFolder ? 'style="display: flex; opacity: 0.9;"' : ''}>
+        // Klasör içerisindeyken her kitabın üzerinde silme/düzenleme/favori butonları OLMASIN
+        const topButtonsHtml = options.inFolder ? '' : `
+            <button class="btn-delete-book" title="Kitabı Sil">
                 <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
             </button>
             <button class="btn-edit-book" title="Kitap Başlığını / Cildini Düzenle">
@@ -1922,6 +2442,10 @@ const app = {
             <button class="btn-favorite-book" title="Favorilere Ekle/Çıkar" style="position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 3; color: ${isFav ? '#f59e0b' : '#d1d5db'}; padding: 0;">
                 <i data-lucide="star" style="width: 14px; height: 14px; ${isFav ? 'fill: #f59e0b;' : ''}"></i>
             </button>
+        `;
+
+        card.innerHTML = `
+            ${topButtonsHtml}
             <div class="book-cover-container">
                 ${coverHtml}
                 <span class="book-badge badge-${book.type}">${book.type}</span>
@@ -1939,46 +2463,44 @@ const app = {
             </div>
         `;
 
-        const btnDelete = card.querySelector('.btn-delete-book');
-        if (btnDelete) {
-            btnDelete.onclick = (e) => {
-                e.stopPropagation();
-                this.deleteBook(book.id, book.title);
-            };
+        if (!options.inFolder) {
+            const btnDelete = card.querySelector('.btn-delete-book');
+            if (btnDelete) {
+                btnDelete.onclick = (e) => {
+                    e.stopPropagation();
+                    this.deleteBook(book.id, book.title);
+                };
+            }
+
+            const btnEdit = card.querySelector('.btn-edit-book');
+            if (btnEdit) {
+                btnEdit.onclick = (e) => {
+                    e.stopPropagation();
+                    this.openEditBookModal(book);
+                };
+            }
+
+            const btnFav = card.querySelector('.btn-favorite-book');
+            if (btnFav) {
+                btnFav.onclick = async (e) => {
+                    e.stopPropagation();
+                    book.isFavorite = !book.isFavorite;
+                    await booksDb.updateBookMetadata(book.id, { isFavorite: book.isFavorite });
+                    await this.loadLibrary();
+                };
+            }
         }
 
-        const btnEdit = card.querySelector('.btn-edit-book');
-        if (btnEdit) {
-            btnEdit.onclick = (e) => {
-                e.stopPropagation();
-                this.openEditBookModal(book);
-            };
-        }
-
-        const btnFav = card.querySelector('.btn-favorite-book');
-        if (btnFav) {
-            btnFav.onclick = async (e) => {
-                e.stopPropagation(); // Kitap okuyucuyu açmasını engelle
-                book.isFavorite = !book.isFavorite;
-                
-                // IndexedDB veritabanında güncelle (dosyasıyla birlikte)
-                const fullBook = await db.books.getItem(book.id);
-                if (fullBook) {
-                    fullBook.isFavorite = book.isFavorite;
-                    await db.books.setItem(book.id, fullBook);
-                }
-                
-                // Arayüzü güncelle
-                await this.loadLibrary();
-            };
-        }
-
-        card.onclick = (e) => {
+        card.onclick = () => {
             if (this.isLibraryDeleteMode && !options.inFolder) {
                 if (confirm(`"${book.title}" kitabını silmek istiyor musunuz?`)) {
                     this.deleteBook(book.id, book.title, true);
                 }
                 return;
+            }
+            // Klasör içinden bir kitaba basıldığında klasör modalını kapat ve kitabı aç
+            if (options.inFolder) {
+                this.closeFolderModal();
             }
             reader.openBook(book.id);
         };
@@ -2071,6 +2593,24 @@ const app = {
         if (replaceModal && replaceModal.style.display === 'flex') {
             replaceModal.style.display = 'none';
             reader.clearHighlight();
+            if (isPopState) {
+                window.history.pushState({ stackIndex: navHistory.stack.length - 1 }, "");
+            }
+            return;
+        }
+
+        const folderManageModal = document.getElementById('folder-manage-modal');
+        if (folderManageModal && folderManageModal.style.display === 'flex') {
+            this.closeFolderManageModal();
+            if (isPopState) {
+                window.history.pushState({ stackIndex: navHistory.stack.length - 1 }, "");
+            }
+            return;
+        }
+
+        const createFolderModal = document.getElementById('create-folder-modal');
+        if (createFolderModal && createFolderModal.style.display === 'flex') {
+            this.closeCreateFolderModal();
             if (isPopState) {
                 window.history.pushState({ stackIndex: navHistory.stack.length - 1 }, "");
             }

@@ -2538,3 +2538,218 @@ body.theme-light .folder-card {
     padding: 18px;
     padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 24px);
 }
+
+/* Okuyucu açıkken klasör modalını kesin olarak gizle */
+html.reader-active .folder-modal-overlay,
+body.reader-active .folder-modal-overlay {
+    display: none !important;
+}
+
+/* Klasör ve Kitapları Yatay Barlarla Yönetme Stilleri */
+.folder-manage-modal-content {
+    width: 94%;
+    max-width: 460px;
+    max-height: 88vh;
+    max-height: 88dvh;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.folder-manage-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-right: 2px;
+}
+
+.folder-meta-edit-box {
+    padding: 12px;
+    border-radius: var(--radius-md);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.folder-meta-inputs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+@media (max-width: 380px) {
+    .folder-meta-inputs {
+        grid-template-columns: 1fr;
+    }
+}
+
+.folder-manage-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.folder-manage-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.folder-manage-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Yatay Kitap Barı (Klasör Yönetimi & Klasör Oluşturma) */
+.folder-book-row {
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    background: var(--bg-surface-solid);
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color var(--transition-fast);
+}
+
+.folder-book-row-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+}
+
+.folder-book-thumb {
+    width: 34px;
+    height: 48px;
+    border-radius: 6px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--bg-app);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.folder-book-row-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.folder-book-row-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.folder-book-row-sub {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.folder-book-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+}
+
+.row-action-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    transition: transform var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.row-action-btn:hover {
+    border-color: var(--border-hover);
+    color: var(--text-primary);
+}
+
+.row-action-btn:active {
+    transform: scale(0.93);
+}
+
+.row-action-btn.active-fav {
+    color: #f59e0b;
+    border-color: rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.row-action-btn.btn-row-edit.active {
+    color: #ffffff;
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+}
+
+.row-action-btn.btn-row-unfolder:hover {
+    color: #38bdf8;
+    border-color: rgba(56, 189, 248, 0.4);
+}
+
+.row-action-btn.btn-row-delete {
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.25);
+}
+
+.row-action-btn.btn-row-delete:hover {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+.row-action-btn.btn-row-add {
+    color: #10b981;
+    border-color: rgba(16, 185, 129, 0.35);
+    background: rgba(16, 185, 129, 0.1);
+    width: auto;
+    padding: 0 10px;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* Yatay Bar İçi Açılır Düzenleme Alanı (Başlık, Yazar, Cilt) */
+.folder-book-inline-edit {
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border-color);
+}
+
+.folder-book-inline-edit.open {
+    display: flex;
+}
+
+.folder-book-inline-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.folder-book-inline-edit input {
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+    border-radius: var(--radius-sm) !important;
+}

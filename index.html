@@ -15,7 +15,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <!-- CSS Stylesheet -->
-    <link rel="stylesheet" href="css/styles.css?v=33">
+    <link rel="stylesheet" href="css/styles.css?v=34">
     <script>
         (function() {
             try {
@@ -59,6 +59,10 @@
                     <!-- Ana Sayfa Tema Değiştirme Butonu (Ay / Güneş) -->
                     <button id="btn-home-theme-toggle" class="icon-btn glass" style="width: 40px; height: 40px; border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); cursor: pointer;" title="Temayı Değiştir">
                         <i data-lucide="sun" style="width: 18px; height: 18px;"></i>
+                    </button>
+                    <!-- Manuel Klasör Oluşturma Butonu -->
+                    <button id="btn-home-create-folder" class="icon-btn glass" style="width: 40px; height: 40px; border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); cursor: pointer;" title="Yeni Klasör Oluştur">
+                        <i data-lucide="folder-plus" style="width: 18px; height: 18px;"></i>
                     </button>
                     <!-- Kitap Silme Modu Butonu (Çöp Kutusu) -->
                     <button id="btn-home-delete-mode" class="icon-btn glass" style="width: 40px; height: 40px; border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); cursor: pointer;" title="Kitap Kaldır">
@@ -260,7 +264,7 @@
             </div>
         </div>
 
-        <!-- Kitap / Klasör Başlığı ve Yazar Düzenleme Modalı -->
+        <!-- Tekil Kitap Başlığı ve Yazar Düzenleme Modalı -->
         <div id="edit-book-modal" class="modal-overlay" style="display: none;">
             <div class="modal-content glass">
                 <div class="modal-header">
@@ -286,12 +290,43 @@
                         <input type="text" id="edit-book-volume-input" placeholder="Örn: 1. Cilt, Cilt 2, Vol. 3...">
                     </div>
                     <div id="edit-book-quick-series-wrap" style="margin-top: 10px; display: none;">
-                        <span style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Mevcut Klasöre / Kitaba Dahil Et (Başlık & Yazar Eşitle):</span>
+                        <span style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Mevcut Klasöre Dahil Et:</span>
                         <div id="edit-book-quick-series-list" class="quick-series-chips"></div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button id="btn-save-book-edit" class="action-btn">Kaydet</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Manuel Klasör Oluşturma Modalı -->
+        <div id="create-folder-modal" class="modal-overlay" style="display: none;">
+            <div class="modal-content glass" style="max-width: 420px; max-height: 86vh; display: flex; flex-direction: column;">
+                <div class="modal-header">
+                    <h3>Yeni Klasör Oluştur</h3>
+                    <button id="btn-close-create-folder-modal" class="icon-btn">
+                        <i data-lucide="x"></i>
+                    </button>
+                </div>
+                <div class="modal-body" style="overflow-y: auto; flex: 1; padding-right: 2px;">
+                    <div class="input-group">
+                        <label for="create-folder-title-input">Klasör / Seri Adı</label>
+                        <input type="text" id="create-folder-title-input" placeholder="Örn: Overlord, Solo Leveling...">
+                    </div>
+                    <div class="input-group" style="margin-top: 8px;">
+                        <label for="create-folder-author-input">Yazar Adı (İsteğe Bağlı)</label>
+                        <input type="text" id="create-folder-author-input" placeholder="Yazar adını girin...">
+                    </div>
+                    <div class="input-group" style="margin-top: 10px;">
+                        <label>Klasöre Eklenecek Kitapları Seçin</label>
+                        <div id="create-folder-books-list" class="folder-manage-list" style="max-height: 240px; overflow-y: auto;">
+                            <!-- Kitaplar yatay seçim satırları olarak listelenir -->
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="btn-save-create-folder" class="action-btn">Klasörü Oluştur</button>
                 </div>
             </div>
         </div>
@@ -310,13 +345,59 @@
                         </div>
                         <span id="folder-modal-subtitle">Yazar • 0 Cilt</span>
                     </div>
-                    <button id="btn-edit-folder-meta" class="icon-btn glass" style="width: 38px; height: 38px; border-radius: var(--radius-md); border: 1px solid var(--border-color);" title="Klasör Başlığını / Yazarı Düzenle">
+                    <button id="btn-edit-folder-meta" class="icon-btn glass" style="width: 38px; height: 38px; border-radius: var(--radius-md); border: 1px solid var(--border-color);" title="Klasörü ve Kitapları Düzenle">
                         <i data-lucide="edit-2" style="width: 16px; height: 16px;"></i>
                     </button>
                 </header>
                 <div class="folder-modal-body">
                     <div id="folder-book-grid" class="book-grid">
                         <!-- Klasördeki ciltler dinamik olarak buraya eklenir -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Klasör İçi Kitapları Yatay Barlarla Yönetme / Düzenleme Modalı -->
+        <div id="folder-manage-modal" class="modal-overlay" style="display: none; z-index: 220;">
+            <div class="modal-content glass folder-manage-modal-content">
+                <div class="modal-header">
+                    <h3>Klasörü ve Kitapları Düzenle</h3>
+                    <button id="btn-close-folder-manage-modal" class="icon-btn">
+                        <i data-lucide="x"></i>
+                    </button>
+                </div>
+                <div class="modal-body folder-manage-modal-body">
+                    <!-- Klasör Başlığı ve Yazar Alanı -->
+                    <div class="folder-meta-edit-box glass">
+                        <div class="folder-meta-inputs">
+                            <div class="input-group">
+                                <label for="manage-folder-title-input">Klasör Başlığı</label>
+                                <input type="text" id="manage-folder-title-input" placeholder="Klasör adı...">
+                            </div>
+                            <div class="input-group">
+                                <label for="manage-folder-author-input">Klasör Yazarı</label>
+                                <input type="text" id="manage-folder-author-input" placeholder="Yazar adı...">
+                            </div>
+                        </div>
+                        <button id="btn-save-folder-meta" class="action-btn" style="padding: 10px; font-size: 13px; margin-top: 8px;">
+                            Klasör Bilgilerini Kaydet
+                        </button>
+                    </div>
+
+                    <!-- Klasördeki Kitaplar (Yatay Barlar) -->
+                    <div class="folder-manage-section">
+                        <span class="folder-manage-section-title">Klasördeki Kitaplar</span>
+                        <div id="folder-manage-books-list" class="folder-manage-list">
+                            <!-- Klasördeki kitaplar yatay bar olarak burada listelenir -->
+                        </div>
+                    </div>
+
+                    <!-- Klasöre Dışarıdan Kitap Ekleme Bölümü -->
+                    <div id="folder-manage-add-section" class="folder-manage-section" style="display: none;">
+                        <span class="folder-manage-section-title">Kütüphaneden Bu Klasöre Kitap Ekle</span>
+                        <div id="folder-manage-available-list" class="folder-manage-list">
+                            <!-- Klasör dışındaki kitaplar yatay bar olarak burada listelenir -->
+                        </div>
                     </div>
                 </div>
             </div>
@@ -666,10 +747,10 @@
 
     <!-- Uygulama Scriptleri -->
     <script src="capacitor.js"></script>
-    <script src="js/db.js?v=33"></script>
-    <script src="js/utils.js?v=33"></script>
-    <script src="js/translate.js?v=33"></script>
-    <script src="js/reader.js?v=33"></script>
-    <script src="js/app.js?v=33"></script>
+    <script src="js/db.js?v=34"></script>
+    <script src="js/utils.js?v=34"></script>
+    <script src="js/translate.js?v=34"></script>
+    <script src="js/reader.js?v=34"></script>
+    <script src="js/app.js?v=34"></script>
 </body>
 </html>
