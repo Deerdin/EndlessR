@@ -102,6 +102,22 @@ const booksDb = {
             console.error("İlerleme güncellenirken hata oluştu:", err);
             return false;
         }
+    },
+
+    // Kitap başlık, yazar veya cilt bilgilerini (dosya verisini koruyarak) güncelle
+    async updateBookMetadata(id, updates) {
+        try {
+            const book = await db.books.getItem(id);
+            if (!book) return false;
+            if (typeof updates.title === 'string') book.title = updates.title.trim();
+            if (typeof updates.author === 'string') book.author = updates.author.trim();
+            if (updates.volumeLabel !== undefined) book.volumeLabel = updates.volumeLabel.trim();
+            await db.books.setItem(id, book);
+            return true;
+        } catch (err) {
+            console.error("Kitap bilgileri güncellenirken hata oluştu:", err);
+            return false;
+        }
     }
 };
 
