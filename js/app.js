@@ -594,6 +594,7 @@ const app = {
 
         // Yeni eklenen ikonları çizdir
         lucide.createIcons();
+        this.updateDatabaseStatsUI();
     },
 
     // Kitap Silme İşlemi
@@ -1275,6 +1276,7 @@ const app = {
         });
 
         lucide.createIcons();
+        this.updateDatabaseStatsUI();
     },
 
     // Kelime Silme İşlemi
@@ -2584,6 +2586,7 @@ const app = {
             listContainer.appendChild(card);
         }
         lucide.createIcons();
+        this.updateDatabaseStatsUI();
     },
 
     async deleteReplacement(id) {
@@ -2618,15 +2621,20 @@ const app = {
             if (!elBooks && !elFolders && !elWords && !elReplacements) return;
 
             const books = await booksDb.getAllBooks();
+            const customFolders = (await settingsDb.get('customFolders', [])) || [];
             const words = await wordsDb.getAllWords();
             const replacements = await replacementsDb.getAllReplacements();
-            const groups = this.groupBooksBySeries(books);
-            const folderCount = groups.filter(g => g.type === 'folder').length;
 
-            if (elBooks) elBooks.textContent = books.length;
-            if (elFolders) elFolders.textContent = folderCount;
-            if (elWords) elWords.textContent = words.length;
-            if (elReplacements) elReplacements.textContent = replacements.length;
+            const libraryItems = this.groupBooksIntoLibraryItems(
+                books,
+                Array.isArray(customFolders) ? customFolders : []
+            );
+            const folderCount = libraryItems.filter(item => item.isFolder).length;
+
+            if (elBooks) elBooks.textContent = `${books.length} Kitap`;
+            if (elFolders) elFolders.textContent = `${folderCount} Klasör`;
+            if (elWords) elWords.textContent = `${words.length} Kelime`;
+            if (elReplacements) elReplacements.textContent = `${replacements.length} Değişim`;
         } catch (err) {
             console.warn("Veritabanı istatistikleri güncellenemedi:", err);
         }
@@ -2642,33 +2650,34 @@ const app = {
         if (progressBar) progressBar.style.width = '5%';
 
         try {
-            const backupData = await backupDb.exportDatabase(includeFiles, (percent, msg) => {
-                if (statusText) statusText.textContent = msg;
-                if (progressBar) progressBar.style.width = `${percent}%`;
+            const { blob, bookCount, wordCount, replacementCount } = await backupDb.exportDatabaseBlob(includeFiles, (percent, msg) => {
+                if (statusText && msg) statusText.textContent = msg;
+                if (progressBar && typeof percent === 'number') progressBar.style.width = `${percent}%`;
             });
 
-            if (statusText) statusText.textContent = 'JSON dosyası oluşturuluyor...';
-            const jsonString = JSON.stringify(backupData);
-            const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
             const url = URL.createObjectURL(blob);
-
             const dateStr = new Date().toISOString().slice(0, 10);
-            const modeStr = includeFiles ? 'tam-yedek' : 'hafif-yedek';
-            const fileName = `endlessr-veritabani-${modeStr}-${dateStr}.json`;
+            const fileName = `endlessr-veritabani-yedek-${dateStr}.json`;
 
             const a = document.createElement('a');
+            a.style.display = 'none';
             a.href = url;
             a.download = fileName;
             document.body.appendChild(a);
             a.click();
-            document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            setTimeout(() => {
+                if (a.parentNode) a.parentNode.removeChild(a);
+            }, 1000);
+            // Mobil tarayıcı indirme yöneticisinin dosyayı tamamlaması için URL'yi 60 saniye açık tut
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
 
-            if (statusText) statusText.textContent = `Yedek başarıyla indirildi (${fileName})`;
+            if (statusText) {
+                statusText.textContent = `Yedek indirildi (${bookCount} kitap, ${wordCount} kelime, ${replacementCount} değişim)`;
+            }
             if (progressBar) progressBar.style.width = '100%';
             setTimeout(() => {
                 if (statusBox) statusBox.style.display = 'none';
-            }, 4000);
+            }, 5000);
         } catch (err) {
             console.error("Yedekleme hatası:", err);
             if (statusText) statusText.textContent = 'Hata: ' + (err.message || 'Yedek oluşturulamadı.');
@@ -2697,17 +2706,13 @@ const app = {
             const backupData = JSON.parse(text);
 
             const stats = await backupDb.importDatabase(backupData, (percent, msg) => {
-                if (statusText) statusText.textContent = msg;
-                if (progressBar) progressBar.style.width = `${percent}%`;
+                if (statusText && msg) statusText.textContent = msg;
+                if (progressBar && typeof percent === 'number') progressBar.style.width = `${percent}%`;
             });
 
-            // Bellekteki ayarları ve arayüzü tazele
-            this.settings = await settingsDb.getSettings();
-            if (!Array.isArray(this.settings.customFolders)) {
-                this.settings.customFolders = [];
-            }
-            this.applyGlobalTheme(this.settings.theme);
-            this.bindSettingsControls();
+            // Temayı ve tüm ekranları gerçek veritabanı fonksiyonlarıyla tazele
+            const savedAppTheme = await settingsDb.get('appTheme', 'dark');
+            await this.setAppTheme(savedAppTheme, true);
 
             await this.loadLibrary();
             await this.loadWords();
@@ -2719,12 +2724,17 @@ const app = {
             }
             if (progressBar) progressBar.style.width = '100%';
 
-            alert(
+            let infoMsg =
                 `Veritabanı başarıyla geri yüklendi!\n\n` +
                 `• Kitap / İlerleme: ${stats.restoredBooks}\n` +
                 `• Sözlük Kelimesi: ${stats.restoredWords}\n` +
-                `• Metin Değişimi: ${stats.restoredReplacements}`
-            );
+                `• Metin Değişimi: ${stats.restoredReplacements}`;
+
+            if (stats.missingFileBooks > 0 && stats.restoredBooks === 0) {
+                infoMsg += `\n\nNot: Yüklediğiniz yedek dosyası eski "Hızlı Yedek (Dosyasız)" seçeneğiyle alındığı için içinde kitapların EPUB/PDF dosyaları yer almıyor. Kitap dosyalarının da yedeğe dahil olması için "Veritabanı Yedeğini İndir" butonunu kullanabilirsiniz.`;
+            }
+
+            alert(infoMsg);
 
             setTimeout(() => {
                 if (statusBox) statusBox.style.display = 'none';

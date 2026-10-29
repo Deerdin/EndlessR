@@ -15,7 +15,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <!-- CSS Stylesheet -->
-    <link rel="stylesheet" href="css/styles.css?v=40">
+    <link rel="stylesheet" href="css/styles.css?v=41">
     <script>
         (function() {
             try {
@@ -215,24 +215,22 @@
                     </div>
 
                     <div id="backup-status-box" style="display: none; padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; background: rgba(99, 102, 241, 0.12); color: var(--accent-color); border: 1px solid rgba(99, 102, 241, 0.3);">
-                        İşlem yapılıyor...
+                        <div id="backup-status-text" style="margin-bottom: 6px;">İşlem yapılıyor...</div>
+                        <div style="width: 100%; height: 6px; background: rgba(128, 128, 128, 0.2); border-radius: 999px; overflow: hidden;">
+                            <div id="backup-progress-bar" style="width: 0%; height: 100%; background: var(--accent-color); transition: width 0.2s ease;"></div>
+                        </div>
                     </div>
 
                     <button id="btn-export-full-backup" class="action-btn" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; font-size: 13px; font-weight: 600;">
                         <i data-lucide="download" style="width: 16px; height: 16px;"></i>
-                        <span>Tam Yedek İndir (Kitaplar + Tüm Veriler)</span>
-                    </button>
-
-                    <button id="btn-export-light-backup" class="action-outline-btn" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 11px; font-size: 12px; font-weight: 600;">
-                        <i data-lucide="file-down" style="width: 15px; height: 15px;"></i>
-                        <span>Hızlı Yedek İndir (İlerleme, Klasör, Sözlük, Değişim)</span>
+                        <span>Veritabanı Yedeğini İndir (Kitaplar + Tüm Veriler)</span>
                     </button>
 
                     <div style="height: 1px; background: var(--border-color); margin: 2px 0;"></div>
 
                     <button id="btn-import-backup" class="action-outline-btn" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; font-size: 13px; font-weight: 600; border-color: var(--accent-color); color: var(--accent-color); background: rgba(99, 102, 241, 0.06);">
                         <i data-lucide="upload" style="width: 16px; height: 16px;"></i>
-                        <span>Yedek Dosyası Yükle (.json)</span>
+                        <span>Yedek Dosyası Yükle / Geri Yükle (.json)</span>
                     </button>
                     <input type="file" id="input-import-backup" accept=".json,.endlessr,application/json" style="display: none;">
                 </div>
@@ -829,10 +827,10 @@
 
     <!-- Uygulama Scriptleri -->
     <script src="capacitor.js"></script>
-    <script src="js/db.js?v=40"></script>
-    <script src="js/utils.js?v=40"></script>
-    <script src="js/translate.js?v=40"></script>
-    <script src="js/reader.js?v=40"></script>
-    <script src="js/app.js?v=40"></script>
+    <script src="js/db.js?v=41"></script>
+    <script src="js/utils.js?v=41"></script>
+    <script src="js/translate.js?v=41"></script>
+    <script src="js/reader.js?v=41"></script>
+    <script src="js/app.js?v=41"></script>
 </body>
 </html>
