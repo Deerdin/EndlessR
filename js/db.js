@@ -252,3 +252,241 @@ const replacementsDb = {
         }
     }
 };
+
+// 6. Tam Veritabanı Yedekleme ve Geri Yükleme (Backup & Restore) Yardımcı Fonksiyonları
+const backupDb = {
+    async bufferToBase64(data) {
+        if (!data) return null;
+        try {
+            let bytes = null;
+            if (data instanceof ArrayBuffer) {
+                bytes = new Uint8Array(data);
+            } else if (ArrayBuffer.isView(data)) {
+                bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+            } else if (typeof Blob !== 'undefined' && data instanceof Blob) {
+                const ab = await data.arrayBuffer();
+                bytes = new Uint8Array(ab);
+            } else if (typeof data === 'string') {
+                return data;
+            }
+            if (!bytes) return null;
+
+            const chunkSize = 0x8000;
+            const chunks = [];
+            for (let i = 0; i < bytes.length; i += chunkSize) {
+                chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize)));
+            }
+            return btoa(chunks.join(''));
+        } catch (err) {
+            console.error("Dosya Base64'e dönüştürülürken hata:", err);
+            return null;
+        }
+    },
+
+    base64ToArrayBuffer(base64) {
+        if (!base64 || typeof base64 !== 'string') return null;
+        try {
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        } catch (err) {
+            console.error("Base64 ArrayBuffer'a dönüştürülürken hata:", err);
+            return null;
+        }
+    },
+
+    async exportDatabase(includeFiles = true, onProgress = null) {
+        const result = {
+            app: 'EndlessR',
+            version: 1,
+            exportedAt: Date.now(),
+            includeFiles: !!includeFiles,
+            books: [],
+            words: [],
+            replacements: [],
+            settings: {},
+            localStorageData: {}
+        };
+
+        // 1. Kitapları dışa aktar
+        const bookKeys = await db.books.keys();
+        for (let i = 0; i < bookKeys.length; i++) {
+            const key = bookKeys[i];
+            if (onProgress) {
+                onProgress(`Kitaplar hazırlanıyor (${i + 1} / ${bookKeys.length})...`);
+            }
+            const book = await db.books.getItem(key);
+            if (!book) continue;
+            const { file, ...meta } = book;
+            const exportedBook = { ...meta };
+            if (includeFiles && file) {
+                exportedBook.fileBase64 = await this.bufferToBase64(file);
+            }
+            result.books.push(exportedBook);
+        }
+
+        if (onProgress) onProgress("Sözlük, metin değişimleri ve klasörler hazırlanıyor...");
+
+        // 2. Sözlük kelimelerini dışa aktar
+        result.words = await wordsDb.getAllWords();
+
+        // 3. Metin değişimlerini dışa aktar
+        result.replacements = await replacementsDb.getAllReplacements();
+
+        // 4. Ayarları ve manuel klasörleri dışa aktar
+        const settingKeys = await db.settings.keys();
+        for (const sKey of settingKeys) {
+            result.settings[sKey] = await db.settings.getItem(sKey);
+        }
+
+        // 5. localStorage üzerindeki okuma konumlarını ve tema tercihlerini dışa aktar
+        try {
+            for (let i = 0; i < localStorage.length; i++) {
+                const lKey = localStorage.key(i);
+                if (lKey && lKey.startsWith('endlessr_')) {
+                    result.localStorageData[lKey] = localStorage.getItem(lKey);
+                }
+            }
+        } catch (e) {}
+
+        return result;
+    },
+
+    async importDatabase(backupData, onProgress = null) {
+        if (!backupData || typeof backupData !== 'object') {
+            throw new Error("Geçersiz yedek dosyası formatı.");
+        }
+
+        let restoredBooks = 0;
+        let restoredWords = 0;
+        let restoredReplacements = 0;
+        let restoredFolders = 0;
+
+        // 1. Ayarları ve Manuel Klasörleri Geri Yükle
+        if (backupData.settings && typeof backupData.settings === 'object') {
+            if (onProgress) onProgress("Ayarlar ve klasörler geri yükleniyor...");
+            for (const [sKey, sVal] of Object.entries(backupData.settings)) {
+                if (sKey === 'customFolders' && Array.isArray(sVal)) {
+                    const existingFolders = (await db.settings.getItem('customFolders')) || [];
+                    const folderMap = new Map();
+                    existingFolders.forEach(f => { if (f && f.id) folderMap.set(f.id, f); });
+                    sVal.forEach(f => { if (f && f.id) folderMap.set(f.id, f); });
+                    const mergedFolders = Array.from(folderMap.values());
+                    await db.settings.setItem('customFolders', mergedFolders);
+                    restoredFolders = mergedFolders.length;
+                } else {
+                    await db.settings.setItem(sKey, sVal);
+                }
+            }
+        }
+
+        // 2. localStorage Verilerini Geri Yükle
+        if (backupData.localStorageData && typeof backupData.localStorageData === 'object') {
+            try {
+                for (const [lKey, lVal] of Object.entries(backupData.localStorageData)) {
+                    if (lKey && lKey.startsWith('endlessr_') && typeof lVal === 'string') {
+                        localStorage.setItem(lKey, lVal);
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // 3. Sözlük Kelimelerini Geri Yükle
+        if (Array.isArray(backupData.words)) {
+            if (onProgress) onProgress(`Sözlük kelimeleri yükleniyor (${backupData.words.length})...`);
+            for (const w of backupData.words) {
+                if (w && w.word) {
+                    const id = (w.id || w.word).trim().toLowerCase();
+                    await db.words.setItem(id, {
+                        ...w,
+                        id
+                    });
+                    restoredWords++;
+                }
+            }
+        }
+
+        // 4. Metin Değişimlerini Geri Yükle
+        if (Array.isArray(backupData.replacements)) {
+            if (onProgress) onProgress(`Metin değişimleri yükleniyor (${backupData.replacements.length})...`);
+            for (const r of backupData.replacements) {
+                if (r && r.originalText && r.replacedText) {
+                    const id = (r.id || r.originalText).trim().toLowerCase();
+                    await db.replacements.setItem(id, {
+                        ...r,
+                        id
+                    });
+                    restoredReplacements++;
+                }
+            }
+        }
+
+        // 5. Kitapları ve İlerlemelerini Geri Yükle
+        if (Array.isArray(backupData.books)) {
+            const existingBooksMeta = await booksDb.getAllBooks();
+            for (let i = 0; i < backupData.books.length; i++) {
+                const b = backupData.books[i];
+                if (!b || !b.id) continue;
+                if (onProgress) {
+                    onProgress(`Kitaplar geri yükleniyor (${i + 1} / ${backupData.books.length})...`);
+                }
+
+                const { fileBase64, ...bookMeta } = b;
+                if (fileBase64) {
+                    const fileBuffer = this.base64ToArrayBuffer(fileBase64);
+                    if (fileBuffer) {
+                        await db.books.setItem(b.id, {
+                            ...bookMeta,
+                            file: fileBuffer
+                        });
+                        restoredBooks++;
+                        continue;
+                    }
+                }
+
+                // Dosya verisi içermeyen hızlı yedek ise mevcut kitabı ID veya Başlık+Yazar ile bulup güncelle
+                let targetBook = await db.books.getItem(b.id);
+                if (!targetBook && b.title) {
+                    const matchedMeta = existingBooksMeta.find(eb =>
+                        eb.title && eb.title.trim().toLowerCase() === b.title.trim().toLowerCase()
+                    );
+                    if (matchedMeta) {
+                        targetBook = await db.books.getItem(matchedMeta.id);
+                    }
+                }
+
+                if (targetBook) {
+                    const targetId = targetBook.id;
+                    const updatedBook = {
+                        ...targetBook,
+                        ...bookMeta,
+                        id: targetId,
+                        file: targetBook.file
+                    };
+                    await db.books.setItem(targetId, updatedBook);
+                    // Eğer ID değişmişse okuma konumu kaydını yeni ID'ye de kopyala
+                    if (targetId !== b.id && backupData.localStorageData) {
+                        try {
+                            const oldEpubPos = backupData.localStorageData['endlessr_pos_' + b.id];
+                            if (oldEpubPos) localStorage.setItem('endlessr_pos_' + targetId, oldEpubPos);
+                            const oldPdfPos = backupData.localStorageData['endlessr_pdf_pos_' + b.id];
+                            if (oldPdfPos) localStorage.setItem('endlessr_pdf_pos_' + targetId, oldPdfPos);
+                        } catch (e) {}
+                    }
+                    restoredBooks++;
+                }
+            }
+        }
+
+        return {
+            restoredBooks,
+            restoredWords,
+            restoredReplacements,
+            restoredFolders
+        };
+    }
+};

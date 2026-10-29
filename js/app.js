@@ -191,6 +191,7 @@ const app = {
         await this.loadLibrary();
         await this.loadWords();
         await this.loadReplacements();
+        await this.updateDatabaseStatsUI();
     },
 
     getActiveProfileSegment() {
@@ -231,6 +232,9 @@ const app = {
         const currentSegment = segmentId || this.getActiveProfileSegment();
         if (viewId === 'view-profile' && segmentId) {
             this.activateProfileSegment(segmentId);
+        }
+        if (viewId === 'view-settings') {
+            this.updateDatabaseStatsUI();
         }
 
         // Geçmişe kaydet (eğer geri gidilmiyorsa)
@@ -2099,9 +2103,17 @@ const app = {
         }
 
         // ÇEVİRİ POPOVER EYLEMLERİ
+        // Popover üzerine basıldığında kitaptaki aktif seçimin (ve 2 kenar noktasının) kaybolmasını önle
+        const translatePopoverEl = document.getElementById('translate-popover');
+        if (translatePopoverEl) {
+            translatePopoverEl.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+            });
+        }
+
         // Kapat Düğmesi
         document.getElementById('btn-close-popover').addEventListener('click', () => {
-            reader.hidePopover();
+            reader.hidePopover(true);
         });
 
         // Sesli Okuma TTS
@@ -2116,6 +2128,54 @@ const app = {
             reader.saveSelectedWord();
         });
 
+        // Web'de Arama Tuşu
+        const btnWebSearch = document.getElementById('btn-web-search');
+        if (btnWebSearch) {
+            btnWebSearch.addEventListener('click', () => {
+                reader.searchSelectedOnWeb();
+            });
+        }
+
+        // Tümünü Seç Tuşu
+        const btnSelectAll = document.getElementById('btn-select-all');
+        if (btnSelectAll) {
+            btnSelectAll.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                reader.selectAllFromPopover();
+            });
+        }
+
+        // Ayarlar Ekranı Veritabanı Yedekleme / Geri Yükleme Dinleyicileri
+        const btnExportFullBackup = document.getElementById('btn-export-full-backup');
+        if (btnExportFullBackup) {
+            btnExportFullBackup.addEventListener('click', () => {
+                this.exportAppBackup(true);
+            });
+        }
+
+        const btnExportLightBackup = document.getElementById('btn-export-light-backup');
+        if (btnExportLightBackup) {
+            btnExportLightBackup.addEventListener('click', () => {
+                this.exportAppBackup(false);
+            });
+        }
+
+        const btnImportBackup = document.getElementById('btn-import-backup');
+        const inputImportBackup = document.getElementById('input-import-backup');
+        if (btnImportBackup && inputImportBackup) {
+            btnImportBackup.addEventListener('click', () => {
+                inputImportBackup.value = '';
+                inputImportBackup.click();
+            });
+            inputImportBackup.addEventListener('change', (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (file) {
+                    this.importAppBackup(file);
+                }
+            });
+        }
+
         // Sayfada boş bir yere tıklandığında popover ve kontrol panelini kapat
         document.addEventListener('mousedown', (e) => {
             const popover = document.getElementById('translate-popover');
@@ -2126,7 +2186,7 @@ const app = {
                 !popover.contains(e.target) && 
                 !e.target.closest('#btn-reader-toc') &&
                 !e.target.closest('.side-panel')) {
-                reader.hidePopover();
+                reader.hidePopover(false);
             }
             
             // Eğer tıklanan yer kontrol paneli veya tetikleyicisi değilse paneli kapat
@@ -2224,66 +2284,17 @@ const app = {
             });
         }
 
-        // PDF Seçimi için global seçim değişikliğini dinle
-        document.addEventListener('selectionchange', async () => {
+        // PDF Seçimi için global seçim değişikliğini dinle (2 kenar noktasını koruyarak)
+        document.addEventListener('selectionchange', () => {
             if (reader.currentBookType !== 'pdf') return;
-            if (reader.isProcessingSelection) return;
-            
             const selection = window.getSelection();
-            const selectedText = selection.toString().trim();
-
-            if (selectedText.length > 0 && selectedText.length < 500) {
-                // Seçim pdf-viewer içinde mi kontrol et
+            const selectedText = selection ? selection.toString().trim() : '';
+            if (selectedText.length > 0 && selectedText.length < 2000 && selection.rangeCount > 0) {
                 const range = selection.getRangeAt(0);
                 const container = range.commonAncestorContainer;
-                const isInsidePdf = document.getElementById('pdf-viewer').contains(container);
-
-                if (isInsidePdf) {
-                    reader.isProcessingSelection = true;
-                    try {
-                        const rect = range.getBoundingClientRect();
-                        // Seçimin orta üst noktası
-                        const posX = rect.left + (rect.width / 2);
-                        const posY = rect.top;
-
-                        // PDF içinde satır bağlamı çıkarmayı dene (veya doğrudan metnin kendisini al)
-                        const fullSentence = selectedText; 
-                        
-                        let finalWord = selectedText;
-                        let finalSentence = fullSentence;
-
-                        let parent = range.commonAncestorContainer;
-                        if (parent.nodeType === Node.TEXT_NODE) parent = parent.parentNode;
-                        const translatedEl = parent.closest('[data-is-translated="true"]');
-                        
-                        if (translatedEl) {
-                            const originalText = translatedEl.getAttribute('data-original-text');
-                            if (originalText) {
-                                const detectResult = await translateService.translateGoogleWithDetails(originalText.slice(0, 150), 'tr');
-                                const origLang = detectResult.lang || 'en';
-                                
-                                const originalWord = await reader.getOriginalWordForSelection(selectedText, range);
-                                
-                                if (origLang.startsWith('en')) {
-                                    finalWord = originalWord;
-                                    finalSentence = originalText;
-                                } else {
-                                    const enResult = await translateService.translateGoogleWithDetails(originalWord, 'en', origLang);
-                                    finalWord = enResult.text.trim();
-                                    const enSentenceResult = await translateService.translateGoogleWithDetails(originalText, 'en', origLang);
-                                    finalSentence = enSentenceResult.text.trim();
-                                }
-                            }
-                        }
-                        
-                        reader.showPopover(finalWord, posX, posY, finalSentence, selectedText);
-                    } catch (err) {
-                        console.error("PDF Selection change error:", err);
-                    } finally {
-                        setTimeout(() => {
-                            reader.isProcessingSelection = false;
-                        }, 300);
-                    }
+                const pdfViewer = document.getElementById('pdf-viewer');
+                if (pdfViewer && pdfViewer.contains(container)) {
+                    reader.scheduleProcessSelection(window, document, 300);
                 }
             }
         });
@@ -2582,6 +2593,135 @@ const app = {
             } else {
                 alert("Değişiklik silinemedi.");
             }
+        }
+    },
+
+    // 8.5 Veritabanı İstatistikleri ve Yedekleme / Geri Yükleme İşlemleri
+    async updateDatabaseStatsUI() {
+        try {
+            const elBooks = document.getElementById('db-stat-books');
+            const elFolders = document.getElementById('db-stat-folders');
+            const elWords = document.getElementById('db-stat-words');
+            const elReplacements = document.getElementById('db-stat-replacements');
+
+            if (!elBooks && !elFolders && !elWords && !elReplacements) return;
+
+            const books = await booksDb.getAllBooks();
+            const words = await wordsDb.getAllWords();
+            const replacements = await replacementsDb.getAllReplacements();
+            const groups = this.groupBooksBySeries(books);
+            const folderCount = groups.filter(g => g.type === 'folder').length;
+
+            if (elBooks) elBooks.textContent = books.length;
+            if (elFolders) elFolders.textContent = folderCount;
+            if (elWords) elWords.textContent = words.length;
+            if (elReplacements) elReplacements.textContent = replacements.length;
+        } catch (err) {
+            console.warn("Veritabanı istatistikleri güncellenemedi:", err);
+        }
+    },
+
+    async exportAppBackup(includeFiles = true) {
+        const statusBox = document.getElementById('backup-status-box');
+        const statusText = document.getElementById('backup-status-text');
+        const progressBar = document.getElementById('backup-progress-bar');
+
+        if (statusBox) statusBox.style.display = 'block';
+        if (statusText) statusText.textContent = 'Yedekleme hazırlanıyor...';
+        if (progressBar) progressBar.style.width = '5%';
+
+        try {
+            const backupData = await backupDb.exportDatabase(includeFiles, (percent, msg) => {
+                if (statusText) statusText.textContent = msg;
+                if (progressBar) progressBar.style.width = `${percent}%`;
+            });
+
+            if (statusText) statusText.textContent = 'JSON dosyası oluşturuluyor...';
+            const jsonString = JSON.stringify(backupData);
+            const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+
+            const dateStr = new Date().toISOString().slice(0, 10);
+            const modeStr = includeFiles ? 'tam-yedek' : 'hafif-yedek';
+            const fileName = `endlessr-veritabani-${modeStr}-${dateStr}.json`;
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+            if (statusText) statusText.textContent = `Yedek başarıyla indirildi (${fileName})`;
+            if (progressBar) progressBar.style.width = '100%';
+            setTimeout(() => {
+                if (statusBox) statusBox.style.display = 'none';
+            }, 4000);
+        } catch (err) {
+            console.error("Yedekleme hatası:", err);
+            if (statusText) statusText.textContent = 'Hata: ' + (err.message || 'Yedek oluşturulamadı.');
+            alert("Veritabanı yedeği oluşturulurken bir hata meydana geldi: " + (err.message || err));
+        }
+    },
+
+    async importAppBackup(file) {
+        if (!file) return;
+        const confirmRestore = confirm(
+            `"${file.name}" dosyasındaki veritabanı yedeğini geri yüklemek istiyor musunuz?\n\n` +
+            `Kitaplar, ilerlemeler, klasörler, sözlük kelimeleri, metin değişimleri ve ayarlar geri yüklenecektir.`
+        );
+        if (!confirmRestore) return;
+
+        const statusBox = document.getElementById('backup-status-box');
+        const statusText = document.getElementById('backup-status-text');
+        const progressBar = document.getElementById('backup-progress-bar');
+
+        if (statusBox) statusBox.style.display = 'block';
+        if (statusText) statusText.textContent = 'Yedek dosyası okunuyor...';
+        if (progressBar) progressBar.style.width = '5%';
+
+        try {
+            const text = await file.text();
+            const backupData = JSON.parse(text);
+
+            const stats = await backupDb.importDatabase(backupData, (percent, msg) => {
+                if (statusText) statusText.textContent = msg;
+                if (progressBar) progressBar.style.width = `${percent}%`;
+            });
+
+            // Bellekteki ayarları ve arayüzü tazele
+            this.settings = await settingsDb.getSettings();
+            if (!Array.isArray(this.settings.customFolders)) {
+                this.settings.customFolders = [];
+            }
+            this.applyGlobalTheme(this.settings.theme);
+            this.bindSettingsControls();
+
+            await this.loadLibrary();
+            await this.loadWords();
+            await this.loadReplacements();
+            await this.updateDatabaseStatsUI();
+
+            if (statusText) {
+                statusText.textContent = `Geri yükleme tamamlandı! (${stats.restoredBooks} kitap, ${stats.restoredWords} kelime, ${stats.restoredReplacements} değişim)`;
+            }
+            if (progressBar) progressBar.style.width = '100%';
+
+            alert(
+                `Veritabanı başarıyla geri yüklendi!\n\n` +
+                `• Kitap / İlerleme: ${stats.restoredBooks}\n` +
+                `• Sözlük Kelimesi: ${stats.restoredWords}\n` +
+                `• Metin Değişimi: ${stats.restoredReplacements}`
+            );
+
+            setTimeout(() => {
+                if (statusBox) statusBox.style.display = 'none';
+            }, 5000);
+        } catch (err) {
+            console.error("Yedek geri yükleme hatası:", err);
+            if (statusText) statusText.textContent = 'Hata: ' + (err.message || 'Geri yükleme başarısız.');
+            alert("Yedek dosyası yüklenirken hata oluştu: " + (err.message || err));
         }
     },
 

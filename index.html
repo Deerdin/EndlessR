@@ -15,7 +15,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <!-- CSS Stylesheet -->
-    <link rel="stylesheet" href="css/styles.css?v=38">
+    <link rel="stylesheet" href="css/styles.css?v=39">
     <script>
         (function() {
             try {
@@ -169,10 +169,72 @@
                 <div class="view-title">Ayarlar</div>
             </header>
             
-            <main class="view-content" style="padding-top: 0;">
-                <div class="empty-state" style="display: flex;">
-                    <i data-lucide="settings" class="empty-icon"></i>
-                    <p>Genel uygulama ayarları burada yer alacak.</p>
+            <main class="view-content" style="padding: 12px 20px 100px; display: flex; flex-direction: column; gap: 16px;">
+                <!-- Veritabanı Özeti Kartı -->
+                <div class="glass" style="padding: 16px; border-radius: var(--radius-lg); border: 1px solid var(--border-color);">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                        <div style="width: 36px; height: 36px; border-radius: var(--radius-md); background: rgba(99, 102, 241, 0.15); color: var(--accent-color); display: flex; align-items: center; justify-content: center;">
+                            <i data-lucide="database" style="width: 18px; height: 18px;"></i>
+                        </div>
+                        <div>
+                            <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Uygulama Veritabanı Özeti</h3>
+                            <span style="font-size: 11px; color: var(--text-muted);">Cihazda kayıtlı tüm verilerinizin anlık durumu</span>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
+                        <div style="padding: 10px 12px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 2px;">
+                            <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Kitaplık & İlerleme</span>
+                            <span id="db-stat-books" style="font-size: 15px; font-weight: 700; color: var(--text-primary);">0 Kitap</span>
+                        </div>
+                        <div style="padding: 10px 12px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 2px;">
+                            <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Klasörler / Seriler</span>
+                            <span id="db-stat-folders" style="font-size: 15px; font-weight: 700; color: var(--text-primary);">0 Klasör</span>
+                        </div>
+                        <div style="padding: 10px 12px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 2px;">
+                            <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Sözlük (Kelimelerim)</span>
+                            <span id="db-stat-words" style="font-size: 15px; font-weight: 700; color: var(--text-primary);">0 Kelime</span>
+                        </div>
+                        <div style="padding: 10px 12px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 2px;">
+                            <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Metin Değişimleri</span>
+                            <span id="db-stat-replacements" style="font-size: 15px; font-weight: 700; color: var(--text-primary);">0 Değişim</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Yedekleme ve Geri Yükleme Kartı -->
+                <div class="glass" style="padding: 16px; border-radius: var(--radius-lg); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 12px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width: 36px; height: 36px; border-radius: var(--radius-md); background: rgba(16, 185, 129, 0.15); color: #10b981; display: flex; align-items: center; justify-content: center;">
+                            <i data-lucide="hard-drive-download" style="width: 18px; height: 18px;"></i>
+                        </div>
+                        <div>
+                            <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Verileri Yedekle & Geri Yükle</h3>
+                            <span style="font-size: 11px; color: var(--text-muted);">Kitaplar, ilerlemeler, klasörler, sözlük ve değişimleri yerel dosyaya indirin veya yükleyin</span>
+                        </div>
+                    </div>
+
+                    <div id="backup-status-box" style="display: none; padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; background: rgba(99, 102, 241, 0.12); color: var(--accent-color); border: 1px solid rgba(99, 102, 241, 0.3);">
+                        İşlem yapılıyor...
+                    </div>
+
+                    <button id="btn-export-full-backup" class="action-btn" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; font-size: 13px; font-weight: 600;">
+                        <i data-lucide="download" style="width: 16px; height: 16px;"></i>
+                        <span>Tam Yedek İndir (Kitaplar + Tüm Veriler)</span>
+                    </button>
+
+                    <button id="btn-export-light-backup" class="action-outline-btn" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 11px; font-size: 12px; font-weight: 600;">
+                        <i data-lucide="file-down" style="width: 15px; height: 15px;"></i>
+                        <span>Hızlı Yedek İndir (İlerleme, Klasör, Sözlük, Değişim)</span>
+                    </button>
+
+                    <div style="height: 1px; background: var(--border-color); margin: 2px 0;"></div>
+
+                    <button id="btn-import-backup" class="action-outline-btn" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; font-size: 13px; font-weight: 600; border-color: var(--accent-color); color: var(--accent-color); background: rgba(99, 102, 241, 0.06);">
+                        <i data-lucide="upload" style="width: 16px; height: 16px;"></i>
+                        <span>Yedek Dosyası Yükle (.json)</span>
+                    </button>
+                    <input type="file" id="input-import-backup" accept=".json,.endlessr,application/json" style="display: none;">
                 </div>
             </main>
         </section>
@@ -728,7 +790,7 @@
             </div>
 
             <!-- Eylem Tuşları -->
-            <div class="popover-footer">
+            <div class="popover-footer" style="flex-wrap: wrap; gap: 6px;">
                 <button id="btn-speak-text" class="popover-btn" title="Seslendir">
                     <i data-lucide="volume-2"></i> Dinle
                 </button>
@@ -737,6 +799,12 @@
                 </button>
                 <button id="btn-replace-text" class="popover-btn" title="Metni Değiştir">
                     <i data-lucide="edit-3"></i> Düzenle
+                </button>
+                <button id="btn-web-search" class="popover-btn" title="Web'de Ara">
+                    <i data-lucide="globe"></i> Web Ara
+                </button>
+                <button id="btn-select-all" class="popover-btn" title="Tümünü Seç">
+                    <i data-lucide="check-square"></i> Tümünü Seç
                 </button>
             </div>
         </div>
@@ -761,10 +829,10 @@
 
     <!-- Uygulama Scriptleri -->
     <script src="capacitor.js"></script>
-    <script src="js/db.js?v=38"></script>
-    <script src="js/utils.js?v=38"></script>
-    <script src="js/translate.js?v=38"></script>
-    <script src="js/reader.js?v=38"></script>
-    <script src="js/app.js?v=38"></script>
+    <script src="js/db.js?v=39"></script>
+    <script src="js/utils.js?v=39"></script>
+    <script src="js/translate.js?v=39"></script>
+    <script src="js/reader.js?v=39"></script>
+    <script src="js/app.js?v=39"></script>
 </body>
 </html>
