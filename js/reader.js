@@ -1784,8 +1784,10 @@ const reader = {
         if (left + popoverWidth > appWidth - 10) left = appWidth - popoverWidth - 10;
 
         let top = posY - popoverHeight - 18;
+        let placedAbove = true;
         if (top < 64) {
             // Eğer üstte yer yoksa seçimin ve seçim noktalarının (damla tutamaçların) altına konumlandır
+            placedAbove = false;
             const anchorBottom = bottomY !== null ? bottomY : (posY + 26);
             top = anchorBottom + 34;
         }
@@ -1796,32 +1798,86 @@ const reader = {
         translationText.style.display = 'block';
         
         // Çeviri Kuralları:
-        // Yalnızca:
-        // 1. Orijinal (Çevrilmeden önceki ham metinde o kelimenin ne olduğu)
-        // 2. Türkçe (Orijinal kelimenin Türkçe karşılığı - yazım hatası/büyük harf olsa bile düzeltilerek)
+        // - Sadece 1 kelime seçildiğinde:
+        //   1. Orijinal (Kitaptaki çevrilmemiş ham kelime)
+        //   2. Olası Türkçe Kelimeler (Kelimenin sözlükteki olası Türkçe karşılıkları)
+        //   3. Cümledeki Anlamı (Kelimenin o cümlede geçen spesifik anlamı ve açıklaması)
+        // - Birden fazla kelime (cümle/paragraf) seçildiğinde:
+        //   1. Orijinal
+        //   2. Türkçe
         try {
             const preferredTr = isBlockTranslated ? cleanSelected : "";
             const srcLang = origLangHint || this.detectedLang || 'auto';
-            const translationTR = await translateService.translateSmartToTurkish(
-                cleanOriginal,
-                sentence || "",
-                srcLang,
-                preferredTr
-            );
 
-            loader.style.display = 'none';
+            const origWordCount = cleanOriginal.split(/\s+/).filter(Boolean).length;
+            const selWordCount = cleanSelected.split(/\s+/).filter(Boolean).length;
+            const isSingleWord = origWordCount === 1 || (selWordCount === 1 && origWordCount <= 2);
 
             const escapeHtml = (str) => (str || '')
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;');
 
-            const rowsHtml =
-                `<div translate="no" class="notranslate" style="margin-bottom: 4px;"><strong>Orijinal:</strong> ${escapeHtml(cleanOriginal)}</div>` +
-                `<div translate="no" class="notranslate"><strong>Türkçe:</strong> ${escapeHtml(translationTR)}</div>`;
+            let rowsHtml = "";
+            let finalTrForAttr = "";
+
+            if (isSingleWord) {
+                const wordAnalysis = await translateService.analyzeSingleWordInContext(
+                    cleanOriginal,
+                    sentence || "",
+                    srcLang,
+                    preferredTr
+                );
+
+                loader.style.display = 'none';
+
+                const possibleListStr = (wordAnalysis.possibleMeanings && wordAnalysis.possibleMeanings.length > 0)
+                    ? wordAnalysis.possibleMeanings.join(', ')
+                    : (wordAnalysis.primaryTr || cleanOriginal);
+
+                const posBadge = wordAnalysis.posLabel
+                    ? ` <span style="opacity: 0.75; font-size: 11px;">(${escapeHtml(wordAnalysis.posLabel)})</span>`
+                    : '';
+
+                rowsHtml =
+                    `<div translate="no" class="notranslate" style="margin-bottom: 5px;"><strong>Orijinal:</strong> ${escapeHtml(cleanOriginal)}</div>` +
+                    `<div translate="no" class="notranslate" style="margin-bottom: 5px;"><strong>Olası Türkçe Kelimeler:</strong> ${escapeHtml(possibleListStr)}</div>` +
+                    `<div translate="no" class="notranslate" style="border-top: 1px solid rgba(128,128,128,0.22); padding-top: 5px; margin-top: 2px;">` +
+                        `<strong>Cümledeki Anlamı:</strong> <strong>${escapeHtml(wordAnalysis.contextualWord)}</strong>${posBadge} — ` +
+                        `<span style="font-weight: 400;">${escapeHtml(wordAnalysis.contextualExplanation)}</span>` +
+                    `</div>`;
+
+                finalTrForAttr = wordAnalysis.primaryTr || cleanOriginal;
+            } else {
+                const translationTR = await translateService.translateSmartToTurkish(
+                    cleanOriginal,
+                    sentence || "",
+                    srcLang,
+                    preferredTr
+                );
+
+                loader.style.display = 'none';
+
+                rowsHtml =
+                    `<div translate="no" class="notranslate" style="margin-bottom: 4px;"><strong>Orijinal:</strong> ${escapeHtml(cleanOriginal)}</div>` +
+                    `<div translate="no" class="notranslate"><strong>Türkçe:</strong> ${escapeHtml(translationTR)}</div>`;
+
+                finalTrForAttr = translationTR;
+            }
 
             this.setUntranslatableContent(translationText, rowsHtml, true);
-            popover.setAttribute('data-translated-tr', translationTR);
+            popover.setAttribute('data-translated-tr', finalTrForAttr);
+
+            // İçerik yüklendikten sonra pencere yüksekliği arttıysa seçimi ve tutamaç noktalarını kapatmaması için konumu güncelle
+            if (placedAbove) {
+                const newHeight = popover.offsetHeight || popoverHeight;
+                let adjustedTop = posY - newHeight - 18;
+                if (adjustedTop < 64) {
+                    const anchorBottom = bottomY !== null ? bottomY : (posY + 26);
+                    adjustedTop = anchorBottom + 34;
+                }
+                popover.style.top = adjustedTop + 'px';
+            }
         } catch (e) {
             loader.style.display = 'none';
             this.setUntranslatableContent(translationText, "Çeviri servisi hatası.", false);

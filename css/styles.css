@@ -1250,6 +1250,8 @@ body.theme-light .header-logo .logo-accent {
     font-size: 13px;
     line-height: 1.4;
     min-height: 38px;
+    max-height: 190px;
+    overflow-y: auto;
 }
 
 body.theme-dark .translation-result, body.theme-night .translation-result {
