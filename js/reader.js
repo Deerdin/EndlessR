@@ -1722,22 +1722,54 @@ const reader = {
     },
 
     // 6. Çeviri Popover Kontrolleri
+    // Google Chrome'un 3 nokta sayfa çevirisinin popover içindeki orijinal metni çevirmesini
+    // tamamen engellemek için hem translate="no" / .notranslate hem de izole Shadow DOM kullanır
+    setUntranslatableContent(el, content, isHtml = false) {
+        if (!el) return;
+        el.setAttribute('translate', 'no');
+        el.classList.add('notranslate');
+        try {
+            const shadow = el.shadowRoot || el.attachShadow({ mode: 'open' });
+            el.textContent = '';
+            if (isHtml) {
+                shadow.innerHTML = `<div translate="no" class="notranslate" style="color: inherit; font: inherit; line-height: inherit; word-break: break-word;">${content}</div>`;
+            } else {
+                shadow.innerHTML = '';
+                const span = document.createElement('span');
+                span.setAttribute('translate', 'no');
+                span.className = 'notranslate';
+                span.textContent = content;
+                shadow.appendChild(span);
+            }
+        } catch (e) {
+            if (isHtml) {
+                el.innerHTML = content;
+            } else {
+                el.textContent = content;
+            }
+        }
+    },
+
     async showPopover(text, posX, posY, sentence, selectedText = "", origLangHint = null, bottomY = null, isBlockTranslated = false) {
         const popover = document.getElementById('translate-popover');
         const textPreview = document.getElementById('selected-text-preview');
         const translationText = document.getElementById('translation-text');
         const loader = document.getElementById('translation-loader');
 
+        popover.setAttribute('translate', 'no');
+        popover.classList.add('notranslate');
+
         const cleanSelected = (selectedText || text || "").trim();
         const cleanOriginal = (text || selectedText || "").trim();
 
-        // Popover başlığını ve özniteliklerini hazırla
-        textPreview.textContent = cleanOriginal.length > 34 ? cleanOriginal.substring(0, 34) + "..." : cleanOriginal;
+        // Popover başlığını ve özniteliklerini hazırla (Shadow DOM ile Chrome çevirisinden koru)
+        const previewStr = cleanOriginal.length > 34 ? cleanOriginal.substring(0, 34) + "..." : cleanOriginal;
+        this.setUntranslatableContent(textPreview, previewStr, false);
         popover.setAttribute('data-selected-word', cleanOriginal);
         popover.setAttribute('data-displayed-selection', cleanSelected);
         popover.setAttribute('data-context-sentence', sentence || cleanOriginal);
         
-        translationText.textContent = "";
+        this.setUntranslatableContent(translationText, "", false);
         loader.style.display = 'flex';
 
         // Popover'ı göster ve konumlandır (Seçimin 2 yanındaki noktaları kapatmayacak şekilde)
@@ -1785,14 +1817,14 @@ const reader = {
                 .replace(/>/g, '&gt;');
 
             const rowsHtml =
-                `<div style="margin-bottom: 4px;"><strong>Orijinal:</strong> ${escapeHtml(cleanOriginal)}</div>` +
-                `<div><strong>Türkçe:</strong> ${escapeHtml(translationTR)}</div>`;
+                `<div translate="no" class="notranslate" style="margin-bottom: 4px;"><strong>Orijinal:</strong> ${escapeHtml(cleanOriginal)}</div>` +
+                `<div translate="no" class="notranslate"><strong>Türkçe:</strong> ${escapeHtml(translationTR)}</div>`;
 
-            translationText.innerHTML = rowsHtml;
+            this.setUntranslatableContent(translationText, rowsHtml, true);
             popover.setAttribute('data-translated-tr', translationTR);
         } catch (e) {
             loader.style.display = 'none';
-            translationText.textContent = "Çeviri servisi hatası.";
+            this.setUntranslatableContent(translationText, "Çeviri servisi hatası.", false);
         }
     },
 
@@ -4059,6 +4091,74 @@ const reader = {
         });
     },
 
+    // Seçilen aralık (range) tek bir paragrafın dışına taşsa veya birden fazla paragrafı kapsasa bile
+    // ilgili [data-original-text] elemanlarını bularak birleştirir
+    extractOriginalAndCurrentBlocksFromRange(range, cleanSel = "") {
+        if (!range) return { origBlock: "", currBlock: "" };
+
+        let node = range.commonAncestorContainer;
+        if (node && node.nodeType === Node.TEXT_NODE) {
+            node = node.parentNode;
+        }
+
+        // 1. Doğrudan [data-original-text] içeren bir üst eleman varsa
+        if (node && typeof node.closest === 'function') {
+            const directParent = node.closest('[data-original-text]');
+            if (directParent) {
+                return {
+                    origBlock: (directParent.getAttribute('data-original-text') || '').replace(/\s+/g, ' ').trim(),
+                    currBlock: (directParent.innerText || directParent.textContent || '').replace(/\s+/g, ' ').trim()
+                };
+            }
+        }
+
+        // 2. Seçim tüm paragrafı / birden fazla paragrafı kapsadığında commonAncestorContainer (body veya kapsayıcı div)
+        // altında kalan ve seçimle kesişen [data-original-text] elemanlarını topla
+        const searchRoot = (node && node.querySelectorAll) ? node : (range.startContainer && range.startContainer.ownerDocument ? range.startContainer.ownerDocument.body : null);
+        if (searchRoot && typeof searchRoot.querySelectorAll === 'function') {
+            const candidates = Array.from(searchRoot.querySelectorAll('[data-original-text]'));
+            const lowerSel = (cleanSel || '').toLowerCase();
+            const intersecting = candidates.filter(el => {
+                try {
+                    if (typeof range.intersectsNode === 'function' && !range.intersectsNode(el)) {
+                        return false;
+                    }
+                    const elCurr = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (!elCurr) return false;
+                    if (!lowerSel) return true;
+                    const elLower = elCurr.toLowerCase();
+                    // Seçimin bitiş tutamacı bir sonraki paragrafın 0. indeksine değdiyse onu dahil etme
+                    return lowerSel.includes(elLower) || elLower.includes(lowerSel) ||
+                           elLower.split(/\s+/).some(w => w.length >= 3 && lowerSel.includes(w));
+                } catch (e) {
+                    return false;
+                }
+            });
+
+            if (intersecting.length > 0) {
+                return {
+                    origBlock: intersecting.map(el => (el.getAttribute('data-original-text') || '').replace(/\s+/g, ' ').trim()).filter(Boolean).join(' '),
+                    currBlock: intersecting.map(el => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim()).filter(Boolean).join(' ')
+                };
+            }
+        }
+
+        // 3. Fallback: startContainer'ın kendi paragrafına bak
+        let startNode = range.startContainer;
+        if (startNode && startNode.nodeType === Node.TEXT_NODE) startNode = startNode.parentNode;
+        if (startNode && typeof startNode.closest === 'function') {
+            const startParent = startNode.closest('[data-original-text]') || startNode.closest('p, h1, h2, h3, h4, h5, h6, li, blockquote, div');
+            if (startParent) {
+                return {
+                    origBlock: (startParent.getAttribute('data-original-text') || '').replace(/\s+/g, ' ').trim(),
+                    currBlock: (startParent.innerText || startParent.textContent || '').replace(/\s+/g, ' ').trim()
+                };
+            }
+        }
+
+        return { origBlock: "", currBlock: "" };
+    },
+
     // Seçilen metnin (çevrilmiş sayfada veya orijinal sayfada) kitaptaki gerçek orijinal karşılığını ve bağlam cümlesini bulur
     async resolveSelectionTranslationContext(selectedText, range, fallbackSentence = "") {
         const cleanSel = (selectedText || "").replace(/\s+/g, " ").trim();
@@ -4066,20 +4166,7 @@ const reader = {
             return { originalText: "", contextSentence: "", origLang: this.detectedLang || "en", isBlockTranslated: false };
         }
 
-        let parent = null;
-        if (range) {
-            let node = range.commonAncestorContainer;
-            if (node && node.nodeType === Node.TEXT_NODE) {
-                node = node.parentNode;
-            }
-            if (node && typeof node.closest === 'function') {
-                parent = node.closest('[data-original-text]') || node.closest('p, h1, h2, h3, h4, h5, h6, li, blockquote, div');
-            }
-        }
-
-        const rawOrigBlock = parent ? (parent.getAttribute('data-original-text') || '') : '';
-        const origBlock = rawOrigBlock.replace(/\s+/g, ' ').trim();
-        const currBlock = parent ? (parent.innerText || parent.textContent || '').replace(/\s+/g, ' ').trim() : '';
+        const { origBlock, currBlock } = this.extractOriginalAndCurrentBlocksFromRange(range, cleanSel);
 
         // 1. Orijinal dili tespit et (önbellekte yoksa metinden algıla)
         let origLang = this.detectedLang || (this.bookData && this.bookData.detectedLang) || null;

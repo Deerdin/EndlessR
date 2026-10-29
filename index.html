@@ -15,7 +15,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <!-- CSS Stylesheet -->
-    <link rel="stylesheet" href="css/styles.css?v=41">
+    <link rel="stylesheet" href="css/styles.css?v=42">
     <script>
         (function() {
             try {
@@ -768,27 +768,27 @@
         </section>
 
         <!-- ================= METİN SEÇİM POPOVER'I (ÇEVİRİ PANELİ) ================= -->
-        <div id="translate-popover" class="translate-popover glass" style="display: none;">
+        <div id="translate-popover" class="translate-popover glass notranslate" translate="no" lang="tr" style="display: none;">
             <div class="popover-arrow"></div>
-            <div class="popover-header">
-                <span class="selected-text-preview" id="selected-text-preview">Seçili Metin</span>
-                <button id="btn-close-popover" class="close-popover-btn">
+            <div class="popover-header notranslate" translate="no">
+                <span class="selected-text-preview notranslate" id="selected-text-preview" translate="no">Seçili Metin</span>
+                <button id="btn-close-popover" class="close-popover-btn" translate="no">
                     <i data-lucide="x"></i>
                 </button>
             </div>
             
-            <div class="popover-content">
+            <div class="popover-content notranslate" translate="no">
                 <!-- Çeviri Sonucu -->
-                <div id="translation-result" class="translation-result">
-                    <div class="loader-spinner" id="translation-loader">
+                <div id="translation-result" class="translation-result notranslate" translate="no">
+                    <div class="loader-spinner notranslate" id="translation-loader" translate="no">
                         <i data-lucide="loader-2" class="spin-icon"></i> Çevriliyor...
                     </div>
-                    <div id="translation-text" class="translation-text"></div>
+                    <div id="translation-text" class="translation-text notranslate" translate="no"></div>
                 </div>
             </div>
 
             <!-- Eylem Tuşları -->
-            <div class="popover-footer" style="flex-wrap: wrap; gap: 6px;">
+            <div class="popover-footer notranslate" translate="no" style="flex-wrap: wrap; gap: 6px;">
                 <button id="btn-speak-text" class="popover-btn" title="Seslendir">
                     <i data-lucide="volume-2"></i> Dinle
                 </button>
@@ -827,10 +827,10 @@
 
     <!-- Uygulama Scriptleri -->
     <script src="capacitor.js"></script>
-    <script src="js/db.js?v=41"></script>
-    <script src="js/utils.js?v=41"></script>
-    <script src="js/translate.js?v=41"></script>
-    <script src="js/reader.js?v=41"></script>
-    <script src="js/app.js?v=41"></script>
+    <script src="js/db.js?v=42"></script>
+    <script src="js/utils.js?v=42"></script>
+    <script src="js/translate.js?v=42"></script>
+    <script src="js/reader.js?v=42"></script>
+    <script src="js/app.js?v=42"></script>
 </body>
 </html>
