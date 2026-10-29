@@ -1002,6 +1002,20 @@ const reader = {
                 console.error("Hook footer yerleştirme hatası:", err);
             }
 
+            // Kelimeye basılı tutulduğunda tarayıcının (Google Chrome) kendi "Kopyala / Tümünü Seç / Web Arama"
+            // menüsünün çıkmasını engelle; yalnızca uygulamanın kendi çeviri penceresi ve 2 seçim noktası kalsın
+            const suppressNativeContextMenu = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            };
+            contents.document.addEventListener('contextmenu', suppressNativeContextMenu, { capture: true, passive: false });
+            contents.window.addEventListener('contextmenu', suppressNativeContextMenu, { capture: true, passive: false });
+            contents.document.oncontextmenu = () => false;
+            if (contents.document.body) {
+                contents.document.body.oncontextmenu = () => false;
+            }
+
             // Seçim noktalarını (2 kenardaki tutamaçları) kaybetmeden seçimi ve genişletmeyi dinle
             contents.document.addEventListener('selectionchange', () => {
                 const sel = contents.window.getSelection();
@@ -1695,7 +1709,8 @@ const reader = {
                 resolved.contextSentence,
                 selectedText,
                 resolved.origLang,
-                bottomY
+                bottomY,
+                resolved.isBlockTranslated
             );
         } catch (err) {
             console.error("Seçim işleme hatası:", err);
@@ -1707,7 +1722,7 @@ const reader = {
     },
 
     // 6. Çeviri Popover Kontrolleri
-    async showPopover(text, posX, posY, sentence, selectedText = "", origLangHint = null, bottomY = null) {
+    async showPopover(text, posX, posY, sentence, selectedText = "", origLangHint = null, bottomY = null, isBlockTranslated = false) {
         const popover = document.getElementById('translate-popover');
         const textPreview = document.getElementById('selected-text-preview');
         const translationText = document.getElementById('translation-text');
@@ -1717,7 +1732,7 @@ const reader = {
         const cleanOriginal = (text || selectedText || "").trim();
 
         // Popover başlığını ve özniteliklerini hazırla
-        textPreview.textContent = cleanSelected.length > 34 ? cleanSelected.substring(0, 34) + "..." : cleanSelected;
+        textPreview.textContent = cleanOriginal.length > 34 ? cleanOriginal.substring(0, 34) + "..." : cleanOriginal;
         popover.setAttribute('data-selected-word', cleanOriginal);
         popover.setAttribute('data-displayed-selection', cleanSelected);
         popover.setAttribute('data-context-sentence', sentence || cleanOriginal);
@@ -1729,7 +1744,7 @@ const reader = {
         popover.style.display = 'flex';
         
         const popoverWidth = Math.min(340, (document.getElementById('app-container').clientWidth || window.innerWidth) - 20);
-        const popoverHeight = popover.offsetHeight || 185;
+        const popoverHeight = popover.offsetHeight || 165;
         const appWidth = document.getElementById('app-container').clientWidth || window.innerWidth;
         
         let left = posX - (popoverWidth / 2);
@@ -1749,19 +1764,18 @@ const reader = {
         translationText.style.display = 'block';
         
         // Çeviri Kuralları:
-        // 1. Orijinal metinde yazan çevrilmemiş direkt metin kendisi yazsın
-        // 2. İngilizce hali: eğer orijinal metin zaten İngilizceyse yazmasın, değilse İngilizcesi yazsın
-        // 3. Orijinal metinden çevrilmiş olan Türkçe karşılığı yazılsın
+        // Yalnızca:
+        // 1. Orijinal (Çevrilmeden önceki ham metinde o kelimenin ne olduğu)
+        // 2. Türkçe (Orijinal kelimenin Türkçe karşılığı - yazım hatası/büyük harf olsa bile düzeltilerek)
         try {
-            const trDetails = await translateService.translateGoogleWithDetails(cleanOriginal, 'tr', 'auto');
-            const translationTR = (trDetails && trDetails.text) ? trDetails.text.trim() : "";
-            const detectedOrigLang = (origLangHint || (trDetails && trDetails.lang) || this.detectedLang || 'en').toLowerCase();
-            const isOriginalEnglish = detectedOrigLang.startsWith('en');
-
-            let translationEN = "";
-            if (!isOriginalEnglish) {
-                translationEN = await translateService.translateGoogle(cleanOriginal, 'en');
-            }
+            const preferredTr = isBlockTranslated ? cleanSelected : "";
+            const srcLang = origLangHint || this.detectedLang || 'auto';
+            const translationTR = await translateService.translateSmartToTurkish(
+                cleanOriginal,
+                sentence || "",
+                srcLang,
+                preferredTr
+            );
 
             loader.style.display = 'none';
 
@@ -1770,11 +1784,9 @@ const reader = {
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;');
 
-            let rowsHtml = `<div style="margin-bottom: 4px;"><strong>Orijinal:</strong> ${escapeHtml(cleanOriginal)}</div>`;
-            if (!isOriginalEnglish && translationEN && translationEN.trim()) {
-                rowsHtml += `<div style="margin-bottom: 4px;"><strong>İngilizce:</strong> ${escapeHtml(translationEN.trim())}</div>`;
-            }
-            rowsHtml += `<div><strong>Türkçe:</strong> ${escapeHtml(translationTR)}</div>`;
+            const rowsHtml =
+                `<div style="margin-bottom: 4px;"><strong>Orijinal:</strong> ${escapeHtml(cleanOriginal)}</div>` +
+                `<div><strong>Türkçe:</strong> ${escapeHtml(translationTR)}</div>`;
 
             translationText.innerHTML = rowsHtml;
             popover.setAttribute('data-translated-tr', translationTR);
@@ -2142,8 +2154,18 @@ const reader = {
         }
         sandbox.innerHTML = '';
 
-        const selectors = 'p, h1, h2, h3, h4, h5, h6, li';
-        const iframeElements = Array.from(doc.querySelectorAll(selectors));
+        const selectors = 'p, h1, h2, h3, h4, h5, h6, li, blockquote';
+        const rawCandidates = Array.from(doc.querySelectorAll(selectors + ', div'));
+        const iframeElements = rawCandidates.filter(el => {
+            if (el.classList && (el.classList.contains('epub-chapter-footer') || el.classList.contains('epub-chapter-spacer'))) {
+                return false;
+            }
+            if (el.tagName.toLowerCase() === 'div') {
+                // Yalnızca alt blok elemanı olmayan yaprak div'leri dahil et
+                return !el.querySelector('p, h1, h2, h3, h4, h5, h6, li, blockquote, div');
+            }
+            return true;
+        });
         const elementMap = new Map();
         const sandboxElementMap = new Map();
 
@@ -2517,6 +2539,7 @@ const reader = {
                     line-height: ${lh} !important;
                     -webkit-user-select: text !important;
                     user-select: text !important;
+                    -webkit-touch-callout: none !important;
                 }
             `;
         } else {
@@ -4040,7 +4063,7 @@ const reader = {
     async resolveSelectionTranslationContext(selectedText, range, fallbackSentence = "") {
         const cleanSel = (selectedText || "").replace(/\s+/g, " ").trim();
         if (!cleanSel) {
-            return { originalText: "", contextSentence: "", origLang: this.detectedLang || "en" };
+            return { originalText: "", contextSentence: "", origLang: this.detectedLang || "en", isBlockTranslated: false };
         }
 
         let parent = null;
@@ -4050,7 +4073,7 @@ const reader = {
                 node = node.parentNode;
             }
             if (node && typeof node.closest === 'function') {
-                parent = node.closest('[data-original-text]') || node.closest('p, h1, h2, h3, h4, h5, h6, li, blockquote');
+                parent = node.closest('[data-original-text]') || node.closest('p, h1, h2, h3, h4, h5, h6, li, blockquote, div');
             }
         }
 
@@ -4087,17 +4110,20 @@ const reader = {
             return {
                 originalText: exactSlice,
                 contextSentence: origBlock || fallbackSentence || exactSlice,
-                origLang
+                origLang,
+                isBlockTranslated: false
             };
         }
 
         // 3. Sayfa/paragraf ÇEVRİLMİŞ ise:
         // Seçilen çevrilmiş metnin (cleanSel), origBlock içindeki gerçek orijinal karşılığını bul
+        // (Kesinlikle dışarıdan "Rowdy" gibi farklı bir kelime uydurmaz; yalnızca ham metindeki gerçek kelimeyi döndürür)
         const mappedOriginal = await this.getOriginalWordForSelection(cleanSel, range, origBlock, currBlock, origLang);
         return {
             originalText: mappedOriginal || cleanSel,
             contextSentence: origBlock || fallbackSentence || mappedOriginal || cleanSel,
-            origLang
+            origLang,
+            isBlockTranslated: true
         };
     },
 
@@ -4113,7 +4139,7 @@ const reader = {
                 node = node.parentNode;
             }
             if (node && typeof node.closest === 'function') {
-                parent = node.closest('[data-original-text]') || node.closest('p, h1, h2, h3, h4, h5, h6, li, blockquote');
+                parent = node.closest('[data-original-text]') || node.closest('p, h1, h2, h3, h4, h5, h6, li, blockquote, div');
             }
         }
 
@@ -4122,6 +4148,15 @@ const reader = {
 
         if (!originalText) return cleanSel;
         if (originalText.toLowerCase() === currentText.toLowerCase()) return cleanSel;
+
+        const stripPunct = (w) => (w || "").replace(/^[^a-zA-Z0-9À-ÿçğıöşüÇĞİÖŞÜ]+|[^a-zA-Z0-9À-ÿçğıöşüÇĞİÖŞÜ]+$/g, "");
+        const normWord = (w) => stripPunct(w).toLowerCase();
+
+        // Eğer orijinal blok tek kelimeden oluşuyorsa doğrudan onu döndür
+        const allOrigWords = originalText.split(/\s+/).filter(Boolean);
+        if (allOrigWords.length === 1) {
+            return stripPunct(allOrigWords[0]) || originalText;
+        }
 
         // Eğer tüm paragraf (veya paragrafın büyük çoğunluğu) seçildiyse doğrudan orijinal paragrafı döndür
         if (currentText && cleanSel.length >= currentText.length * 0.8) {
@@ -4135,12 +4170,11 @@ const reader = {
                 origLang = (detectResult && detectResult.lang) ? detectResult.lang.toLowerCase() : 'en';
             }
 
-            // Cümle bazlı hizalama: hem çevrilmiş bloğu hem orijinal bloğu cümlelere ayır
+            // 1. Cümle bazlı hizalama: hem çevrilmiş bloğu hem orijinal bloğu cümlelere ayır
             const splitIntoSentences = (txt) => (txt.match(/[^.!?…]+(?:[.!?…]+["”'’)\]]*|$)/g) || [txt]).map(s => s.trim()).filter(Boolean);
             const currSents = splitIntoSentences(currentText || cleanSel);
             const origSents = splitIntoSentences(originalText);
 
-            // Seçilen metnin hangi cümle(ler) içinde yer aldığını bul
             let matchedSentIndices = [];
             const lowerSel = cleanSel.toLowerCase();
             currSents.forEach((cs, idx) => {
@@ -4154,7 +4188,6 @@ const reader = {
             let targetCurrSent = currentText || cleanSel;
 
             if (matchedSentIndices.length > 1 && origSents.length > 1) {
-                // Birden fazla cümle seçildiyse karşılık gelen orijinal cümle aralığını birleştir
                 const startOrigIdx = Math.min(origSents.length - 1, Math.round((matchedSentIndices[0] / Math.max(1, currSents.length - 1)) * (origSents.length - 1)));
                 const endOrigIdx = Math.min(origSents.length - 1, Math.round((matchedSentIndices[matchedSentIndices.length - 1] / Math.max(1, currSents.length - 1)) * (origSents.length - 1)));
                 const combinedOrig = origSents.slice(startOrigIdx, Math.max(startOrigIdx + 1, endOrigIdx + 1)).join(' ');
@@ -4170,68 +4203,145 @@ const reader = {
                 targetCurrSent = currSents[cIdx];
                 targetOrigSent = origSents[oIdx];
 
-                // Eğer cümlenin tamamına yakını seçildiyse doğrudan o orijinal cümleyi döndür
-                if (cleanSel.length >= targetCurrSent.length * 0.72) {
+                if (cleanSel.length >= targetCurrSent.length * 0.75) {
                     return targetOrigSent;
                 }
             }
 
-            // Seçilen kısmın cümle içindeki göreli konumunu (0..1) hesapla
+            // 2. Noktalama / Yan Cümlecik (Clause) Daraltması:
+            // Örn. "Class: Brusier" <-> "Sınıf: Kabadayı" veya virgül/iki nokta ile ayrılmış parçalar
+            const clauseSplitRegex = /[:;—–()\[\]/]+/;
+            if (clauseSplitRegex.test(targetCurrSent) && clauseSplitRegex.test(targetOrigSent)) {
+                const currClauses = targetCurrSent.split(clauseSplitRegex).map(s => s.trim()).filter(Boolean);
+                const origClauses = targetOrigSent.split(clauseSplitRegex).map(s => s.trim()).filter(Boolean);
+                if (currClauses.length === origClauses.length && currClauses.length > 1) {
+                    const cClauseIdx = currClauses.findIndex(cl => cl.toLowerCase().includes(lowerSel));
+                    if (cClauseIdx !== -1 && origClauses[cClauseIdx]) {
+                        targetCurrSent = currClauses[cClauseIdx];
+                        targetOrigSent = origClauses[cClauseIdx];
+                        const clauseTokens = targetOrigSent.split(/\s+/).filter(Boolean);
+                        if (clauseTokens.length === 1) {
+                            return stripPunct(clauseTokens[0]) || targetOrigSent;
+                        }
+                        if (cleanSel.length >= targetCurrSent.length * 0.75) {
+                            return targetOrigSent;
+                        }
+                    }
+                }
+            }
+
+            const origTokens = targetOrigSent.split(/\s+/).filter(Boolean);
+            if (origTokens.length === 0) return originalText;
+            if (origTokens.length === 1) return stripPunct(origTokens[0]) || targetOrigSent;
+
+            const selWordCount = cleanSel.split(/\s+/).filter(Boolean).length;
             const posInCurr = Math.max(0, targetCurrSent.toLowerCase().indexOf(lowerSel));
             const relRatio = (posInCurr + cleanSel.length / 2) / Math.max(1, targetCurrSent.length);
 
-            const stripPunct = (w) => (w || "").replace(/^[^a-zA-Z0-9À-ÿçğıöşüÇĞİÖŞÜ]+|[^a-zA-Z0-9À-ÿçğıöşüÇĞİÖŞÜ]+$/g, "");
-            const normWord = (w) => stripPunct(w).toLowerCase();
+            // İngilizce edat/yardımcı fiil/zamir listesi (içerik kelimesi seçildiğinde bunları elemek için)
+            const enStopwords = new Set([
+                'the', 'a', 'an', 'to', 'of', 'in', 'on', 'at', 'for', 'with', 'by', 'from', 'as',
+                'is', 'was', 'were', 'are', 'am', 'be', 'been', 'being', 'have', 'has', 'had',
+                'do', 'does', 'did', 'will', 'would', 'shall', 'should', 'can', 'could', 'may', 'might', 'must',
+                'he', 'she', 'it', 'they', 'we', 'you', 'i', 'his', 'her', 'its', 'their', 'our', 'your', 'my',
+                'him', 'them', 'us', 'me', 'that', 'this', 'these', 'those', 'which', 'who', 'whom', 'whose',
+                'and', 'or', 'but', 'if', 'than', 'then', 'so', 'not', 'no', 'nor'
+            ]);
 
-            // A. Seçilen metni orijinal dile geri çevir (Back-translation)
-            const backResult = await translateService.translateGoogleWithDetails(cleanSel, origLang, 'auto');
-            const backTranslated = (backResult && backResult.text) ? backResult.text.trim() : "";
+            // İki kelimenin kök / yazım hatası (Damerau-Levenshtein <= 1, örn. Brusier <-> bruiser) eşleşmesini kontrol eder
+            const wordsMatchFuzzyOrStem = (origW, candW) => {
+                if (!origW || !candW) return 0;
+                if (origW === candW) return 100;
+                const minL = Math.min(origW.length, candW.length);
+                const maxL = Math.max(origW.length, candW.length);
 
-            const origTokens = targetOrigSent.split(/\s+/).filter(Boolean);
-            const selWordCount = cleanSel.split(/\s+/).filter(Boolean).length;
-
-            if (backTranslated && origTokens.length > 0) {
-                // 1) Orijinal cümle içinde doğrudan alt-dizi (substring) eşleşmesi var mı?
-                const cleanBackPhrase = stripPunct(backTranslated).toLowerCase();
-                if (cleanBackPhrase.length >= 2) {
-                    const directIdx = targetOrigSent.toLowerCase().indexOf(cleanBackPhrase);
-                    if (directIdx !== -1) {
-                        return stripPunct(targetOrigSent.substr(directIdx, cleanBackPhrase.length));
-                    }
+                // Yan yana harf yer değiştirmesi veya 1 harf yazım hatası (örn. "brusier" <-> "bruiser", mesafe = 1)
+                if (minL >= 4 && Math.abs(origW.length - candW.length) <= 1) {
+                    const dist = translateService.damerauLevenshtein(origW, candW);
+                    if (dist === 1) return 95;
+                    if (dist === 2 && minL >= 7 && origW[0] === candW[0]) return 82;
                 }
 
-                // 2) Kelime / kök (stem) eşleşmesi (tek kelime veya kısa kelime grubu)
-                const backWords = backTranslated.split(/\s+/).map(normWord).filter(w => w.length >= 2);
-                const stemsMatch = (w1, w2) => {
-                    if (!w1 || !w2) return false;
-                    if (w1 === w2) return true;
-                    const minL = Math.min(w1.length, w2.length);
-                    if (minL >= 4 && (w1.startsWith(w2.slice(0, 4)) || w2.startsWith(w1.slice(0, 4)))) return true;
-                    if (minL >= 3 && (w1.includes(w2) || w2.includes(w1))) return true;
-                    return false;
-                };
+                // Kök (stem) eşleşmesi
+                if (minL >= 4 && (origW.startsWith(candW.slice(0, 4)) || candW.startsWith(origW.slice(0, 4)))) {
+                    if (maxL - minL <= 4) return 85;
+                }
+                if (minL >= 4 && (origW.includes(candW) || candW.includes(origW))) {
+                    return 78;
+                }
+                return 0;
+            };
 
-                if (selWordCount === 1 && backWords.length > 0) {
-                    let bestToken = null;
-                    let bestDist = 999;
+            // 3. Zengin Geri Çeviri + Sözlük Eş Anlamlıları (dt=bd & dt=at) ile Ham Metindeki Kelimeyi Bulma
+            // Örn. "Kabadayı" -> dictTerms içinde "bruiser", "rowdy", "bully", "brawler" gelir;
+            // "bruiser" ile ham metindeki "Brusier" Damerau-Levenshtein (mesafe=1) ile %95 eşleşir ve doğrudan "Brusier" döner!
+            const backResult = await translateService.translateGoogleWithDetails(cleanSel, origLang, 'auto');
+            const allBackCandidates = new Set();
+
+            const collectBackTerms = (resObj) => {
+                if (!resObj) return;
+                if (resObj.text) {
+                    resObj.text.split(/\s+/).map(normWord).filter(w => w.length >= 2).forEach(w => allBackCandidates.add(w));
+                }
+                if (Array.isArray(resObj.dictTerms)) {
+                    resObj.dictTerms.forEach(term => {
+                        term.split(/\s+/).map(normWord).filter(w => w.length >= 2).forEach(w => allBackCandidates.add(w));
+                    });
+                }
+                if (Array.isArray(resObj.altTerms)) {
+                    resObj.altTerms.forEach(term => {
+                        term.split(/\s+/).map(normWord).filter(w => w.length >= 2).forEach(w => allBackCandidates.add(w));
+                    });
+                }
+            };
+            collectBackTerms(backResult);
+
+            // Eğer seçilen Türkçe kelimede çekim eki varsa (örn. "Kabadayıydı", "Kabadayının"), olası kökünü de sorgula
+            if (selWordCount === 1) {
+                const trNorm = normWord(cleanSel);
+                const strippedTrStem = trNorm.replace(/(?:yd[ıiuü]|d[ıiuü]|t[ıiuü]|n[ıiuü]n|[ıiuü]n|y?[ae]|d[ae]n|t[ae]n|d[ae]|t[ae]|l[ae]r|l[ıiuü]k|c[ıiuü]|s[ıiuü]z)$/i, '');
+                if (strippedTrStem && strippedTrStem.length >= 3 && strippedTrStem !== trNorm) {
+                    const stemBackRes = await translateService.translateGoogleWithDetails(strippedTrStem, origLang, 'tr');
+                    collectBackTerms(stemBackRes);
+                }
+            }
+
+            if (allBackCandidates.size > 0) {
+                const backList = Array.from(allBackCandidates);
+
+                if (selWordCount === 1) {
+                    let bestTok = null;
+                    let bestTotalScore = -1;
+
                     origTokens.forEach((tok, idx) => {
                         const nw = normWord(tok);
-                        if (backWords.some(bw => stemsMatch(nw, bw))) {
+                        if (!nw || nw.length < 2) return;
+                        let maxMatch = 0;
+                        for (const bw of backList) {
+                            const m = wordsMatchFuzzyOrStem(nw, bw);
+                            if (m > maxMatch) maxMatch = m;
+                        }
+                        if (maxMatch > 0) {
                             const tokRatio = (idx + 0.5) / origTokens.length;
-                            const dist = Math.abs(tokRatio - relRatio);
-                            if (dist < bestDist) {
-                                bestDist = dist;
-                                bestToken = stripPunct(tok);
+                            const distPenalty = Math.abs(tokRatio - relRatio) * 25;
+                            const stopPenalty = enStopwords.has(nw) ? 30 : 0;
+                            const total = maxMatch - distPenalty - stopPenalty;
+                            if (total > bestTotalScore) {
+                                bestTotalScore = total;
+                                bestTok = stripPunct(tok);
                             }
                         }
                     });
-                    if (bestToken) return bestToken;
-                } else if (backWords.length > 0) {
+
+                    if (bestTok && bestTotalScore >= 55) {
+                        return bestTok;
+                    }
+                } else {
                     // Çok kelimeli seçim: orijinal cümlede eşleşen ilk ve son kelime arasındaki gerçek dilimi al
                     let matchIndices = [];
                     origTokens.forEach((tok, idx) => {
                         const nw = normWord(tok);
-                        if (nw.length >= 3 && backWords.some(bw => bw.length >= 3 && stemsMatch(nw, bw))) {
+                        if (nw.length >= 3 && !enStopwords.has(nw) && backList.some(bw => bw.length >= 3 && wordsMatchFuzzyOrStem(nw, bw) >= 75)) {
                             matchIndices.push(idx);
                         }
                     });
@@ -4245,11 +4355,11 @@ const reader = {
                 }
             }
 
-            // B. İleri Yönlü (Forward) Kelime Eşleştirme:
-            // Orijinal cümledeki aday kelimeleri Türkçeye çevirip seçilen Türkçe kelimeyle (veya köküyle) eşleştir
+            // 4. İleri Yönlü (Forward) Kelime Eşleştirme + Diğer Kelimeleri Eleme (Cross-Off Elimination):
+            // Orijinal cümledeki kelimeleri Türkçeye çevir; seçilen kelimeyle eşleşeni bul veya cümledeki diğer Türkçe kelimelerle eşleşenleri eleyip kalan gerçek kelimeyi döndür
             if (origTokens.length > 0 && selWordCount <= 3) {
                 const centerIdx = Math.min(origTokens.length - 1, Math.max(0, Math.round(relRatio * (origTokens.length - 1))));
-                const winRadius = Math.min(origTokens.length, 6);
+                const winRadius = Math.min(origTokens.length, 8);
                 const startI = Math.max(0, centerIdx - winRadius);
                 const endI = Math.min(origTokens.length - 1, centerIdx + winRadius);
 
@@ -4257,19 +4367,20 @@ const reader = {
                 for (let i = startI; i <= endI; i++) {
                     const singleClean = stripPunct(origTokens[i]);
                     if (singleClean.length >= 2) {
-                        candidates.push({ orig: singleClean, idx: i });
+                        candidates.push({ orig: singleClean, idx: i, isSingle: true });
                     }
                     if (selWordCount >= 2 && i + 1 <= endI) {
                         const pairClean = stripPunct(origTokens[i] + ' ' + origTokens[i + 1]);
                         if (pairClean.length >= 4) {
-                            candidates.push({ orig: pairClean, idx: i + 0.5 });
+                            candidates.push({ orig: pairClean, idx: i + 0.5, isSingle: false });
                         }
                     }
                 }
 
                 if (candidates.length > 0) {
-                    const batchInput = candidates.map(c => c.orig).join('\n');
-                    const batchTr = await translateService.translateGoogle(batchInput, 'tr');
+                    // Küçük harfle gönder ki Google büyük harfli kelimeleri özel isim sanıp çevirmeden bırakmasın
+                    const batchInput = candidates.map(c => c.orig.toLowerCase()).join('\n');
+                    const batchTr = await translateService.translateGoogle(batchInput, 'tr', origLang);
                     const trLines = (batchTr || '').split('\n').map(l => normWord(l));
                     const targetNorm = normWord(cleanSel);
                     const targetRoot = targetNorm.slice(0, Math.min(targetNorm.length, 4));
@@ -4284,9 +4395,9 @@ const reader = {
                         if (trWord === targetNorm) {
                             score = 100;
                         } else if (trWord.length >= 3 && targetNorm.length >= 3 && (trWord.includes(targetNorm) || targetNorm.includes(trWord))) {
-                            score = 80;
+                            score = 82;
                         } else if (targetRoot.length >= 4 && trWord.startsWith(targetRoot)) {
-                            score = 65;
+                            score = 68;
                         }
                         if (score > 0) {
                             const distPenalty = Math.abs((cand.idx / Math.max(1, origTokens.length - 1)) - relRatio) * 20;
@@ -4301,10 +4412,66 @@ const reader = {
                     if (bestCand) {
                         return bestCand;
                     }
+
+                    // Eğer doğrudan eşleşmediyse (örn. "Brusier" yazım hatası olduğu için toplu çeviride aynı kaldıysa):
+                    // Cümledeki DİĞER Türkçe kelimelerle eşleşen İngilizce kelimeleri ve edatları (stopwords) ele!
+                    if (selWordCount === 1) {
+                        const otherCurrWords = targetCurrSent
+                            .split(/\s+/)
+                            .map(normWord)
+                            .filter(w => w.length >= 2 && w !== targetNorm && !targetNorm.includes(w));
+
+                        let bestUnmatchedOrig = null;
+                        let bestUnmatchedScore = -999;
+
+                        candidates.filter(c => c.isSingle).forEach((cand, cIdx) => {
+                            const nw = normWord(cand.orig);
+                            const trWord = trLines[cIdx] || '';
+                            if (enStopwords.has(nw)) return;
+
+                            // Bu İngilizce kelimenin çevirisi cümledeki başka bir Türkçe kelimeyle eşleşiyor mu?
+                            const matchesOtherWord = trWord && trWord !== nw && otherCurrWords.some(ow => {
+                                return ow === trWord || (ow.length >= 4 && trWord.length >= 4 && (ow.startsWith(trWord.slice(0, 4)) || trWord.startsWith(ow.slice(0, 4))));
+                            });
+                            if (matchesOtherWord) return;
+
+                            // Kalan adayları konum yakınlığına ve çevrilmemiş (özel/hatalı yazım) olma durumuna göre puanla
+                            const posDist = Math.abs((cand.idx / Math.max(1, origTokens.length - 1)) - relRatio);
+                            const untranslatedBonus = (trWord === nw) ? 25 : 0;
+                            const score = 100 - (posDist * 100) + untranslatedBonus;
+                            if (score > bestUnmatchedScore) {
+                                bestUnmatchedScore = score;
+                                bestUnmatchedOrig = cand.orig;
+                            }
+                        });
+
+                        if (bestUnmatchedOrig) {
+                            return bestUnmatchedOrig;
+                        }
+                    }
                 }
             }
 
-            return backTranslated || cleanSel;
+            // 5. Son Güvence: Kesinlikle dışarıdan "Rowdy" gibi çeviri uydurma!
+            // Ham metindeki (origTokens) ilgili konumdaki gerçek kelimeyi/ifadeyi döndür
+            const fallbackCenter = Math.min(origTokens.length - 1, Math.max(0, Math.round(relRatio * (origTokens.length - 1))));
+            if (selWordCount === 1) {
+                // Eğer tam o konumdaki kelime "the/a" gibi bir stopword ise hemen yanındaki içerik kelimesine bak
+                let chosenIdx = fallbackCenter;
+                if (enStopwords.has(normWord(origTokens[chosenIdx]))) {
+                    if (chosenIdx + 1 < origTokens.length && !enStopwords.has(normWord(origTokens[chosenIdx + 1]))) {
+                        chosenIdx = chosenIdx + 1;
+                    } else if (chosenIdx - 1 >= 0 && !enStopwords.has(normWord(origTokens[chosenIdx - 1]))) {
+                        chosenIdx = chosenIdx - 1;
+                    }
+                }
+                return stripPunct(origTokens[chosenIdx]) || origTokens[chosenIdx];
+            } else {
+                const half = Math.floor(selWordCount / 2);
+                const sI = Math.max(0, fallbackCenter - half);
+                const eI = Math.min(origTokens.length, sI + selWordCount);
+                return origTokens.slice(sI, eI).join(' ').replace(/^[.,;!?]+|[.,;!?]+$/g, '');
+            }
         } catch (err) {
             console.error("Original word mapping error:", err);
             return cleanSel;

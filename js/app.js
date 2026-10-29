@@ -2284,6 +2284,17 @@ const app = {
             });
         }
 
+        // Okuyucu ekranında tarayıcının (Google Chrome) kendi "Kopyala / Tümünü Seç / Web Arama"
+        // menüsünün çıkmasını engelle; yalnızca uygulamanın kendi çeviri penceresi görünsün
+        window.addEventListener('contextmenu', (e) => {
+            if (document.body.classList.contains('reader-active') ||
+                (e.target && e.target.closest && (e.target.closest('#view-reader') || e.target.closest('#translate-popover')))) {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            }
+        }, { capture: true, passive: false });
+
         // PDF Seçimi için global seçim değişikliğini dinle (2 kenar noktasını koruyarak)
         document.addEventListener('selectionchange', () => {
             if (reader.currentBookType !== 'pdf') return;
