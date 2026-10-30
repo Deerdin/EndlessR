@@ -15,7 +15,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <!-- CSS Stylesheet -->
-    <link rel="stylesheet" href="css/styles.css?v=45">
+    <link rel="stylesheet" href="css/styles.css?v=46">
     <script>
         (function() {
             try {
@@ -53,34 +53,35 @@
         <!-- 1. Anasayfa (Ana Ekran) -->
         <section id="view-home" class="app-view active">
             <!-- Anasayfa Üst Barı -->
-            <header class="view-header" style="padding-bottom: 20px;">
+            <header class="view-header">
                 <div class="header-logo"><span class="logo-main">Endless</span><span class="logo-accent">R</span></div>
-                <div class="header-actions" style="display: flex; align-items: center; gap: 8px;">
+                <div class="header-actions">
                     <!-- Ana Sayfa Tema Değiştirme Butonu (Ay / Güneş) -->
-                    <button id="btn-home-theme-toggle" class="icon-btn glass" style="width: 40px; height: 40px; border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); cursor: pointer;" title="Switch Theme">
-                        <i data-lucide="sun" style="width: 18px; height: 18px;"></i>
+                    <button id="btn-home-theme-toggle" class="icon-btn glass header-icon-btn" title="Switch Theme">
+                        <i data-lucide="sun" style="width: 17px; height: 17px;"></i>
                     </button>
                     <!-- Manuel Klasör Oluşturma Butonu -->
-                    <button id="btn-home-create-folder" class="icon-btn glass" style="width: 40px; height: 40px; border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); cursor: pointer;" title="Create New Folder">
-                        <i data-lucide="folder-plus" style="width: 18px; height: 18px;"></i>
+                    <button id="btn-home-create-folder" class="icon-btn glass header-icon-btn" title="Create New Folder">
+                        <i data-lucide="folder-plus" style="width: 17px; height: 17px;"></i>
                     </button>
                     <!-- Kitap Silme Modu Butonu (Çöp Kutusu) -->
-                    <button id="btn-home-delete-mode" class="icon-btn glass" style="width: 40px; height: 40px; border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); cursor: pointer;" title="Delete Mode">
-                        <i data-lucide="trash-2" style="width: 18px; height: 18px;"></i>
+                    <button id="btn-home-delete-mode" class="icon-btn glass header-icon-btn" title="Delete Mode">
+                        <i data-lucide="trash-2" style="width: 17px; height: 17px;"></i>
                     </button>
                     <!-- Kitap Yükleme Butonu -->
-                    <button id="btn-home-upload-trigger" class="action-outline-btn-sm" style="background: var(--accent-gradient); border: none; color: white; padding: 10px 16px; border-radius: var(--radius-md); font-weight: 600; display: flex; align-items: center; gap: 6px;">
-                        <i data-lucide="plus" style="width: 16px; height: 16px;"></i> Add Book
+                    <button id="btn-home-upload-trigger" class="action-outline-btn-sm header-upload-btn">
+                        <i data-lucide="plus" style="width: 15px; height: 15px; flex-shrink: 0;"></i>
+                        <span>Add Book</span>
                     </button>
                     <input type="file" id="file-input" accept=".epub,.pdf" style="display: none;">
                 </div>
             </header>
             
-            <main class="view-content" style="padding-top: 0;">
+            <main class="view-content" style="padding-top: 4px;">
                 <span class="section-title">My Books</span>
                 
                 <!-- Kitap Listesi -->
-                <div id="book-grid" class="book-grid" style="margin-top: 12px;">
+                <div id="book-grid" class="book-grid">
                     <!-- Dinamik doldurulacak -->
                 </div>
 
@@ -444,22 +445,22 @@
                     </div>
                 </header>
                 <!-- Klasör İçeriği İstatistikleri (Cilt, Bölüm, Sayfa, Kelime) -->
-                <div id="folder-stats-bar" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--border-color); background: rgba(128,128,128,0.04);">
-                    <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color);">
-                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">VOLUMES</span>
-                        <span id="folder-stat-volumes" style="font-size: 13px; font-weight: 700; color: var(--text-primary);">0</span>
+                <div id="folder-stats-bar" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--border-color); background: rgba(128,128,128,0.04);">
+                    <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); min-width: 0; overflow: hidden;">
+                        <span style="font-size: 9px; color: var(--text-muted); font-weight: 600; white-space: nowrap;">VOLUMES</span>
+                        <span id="folder-stat-volumes" style="font-size: 13px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">0</span>
                     </div>
-                    <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color);">
-                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">CHAPTERS</span>
-                        <span id="folder-stat-chapters" style="font-size: 13px; font-weight: 700; color: var(--text-primary);">0</span>
+                    <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); min-width: 0; overflow: hidden;">
+                        <span style="font-size: 9px; color: var(--text-muted); font-weight: 600; white-space: nowrap;">CHAPTERS</span>
+                        <span id="folder-stat-chapters" style="font-size: 13px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">0</span>
                     </div>
-                    <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color);">
-                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">PAGES</span>
-                        <span id="folder-stat-pages" style="font-size: 13px; font-weight: 700; color: var(--text-primary);">0</span>
+                    <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); min-width: 0; overflow: hidden;">
+                        <span style="font-size: 9px; color: var(--text-muted); font-weight: 600; white-space: nowrap;">PAGES</span>
+                        <span id="folder-stat-pages" style="font-size: 13px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">0</span>
                     </div>
-                    <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color);">
-                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">WORDS</span>
-                        <span id="folder-stat-words" style="font-size: 13px; font-weight: 700; color: var(--accent-color);">0</span>
+                    <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); min-width: 0; overflow: hidden;">
+                        <span style="font-size: 9px; color: var(--text-muted); font-weight: 600; white-space: nowrap;">WORDS</span>
+                        <span id="folder-stat-words" style="font-size: 13px; font-weight: 700; color: var(--accent-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">0</span>
                     </div>
                 </div>
                 <div class="folder-modal-body">
@@ -894,10 +895,10 @@
 
     <!-- Uygulama Scriptleri -->
     <script src="capacitor.js"></script>
-    <script src="js/db.js?v=45"></script>
-    <script src="js/utils.js?v=45"></script>
-    <script src="js/translate.js?v=45"></script>
-    <script src="js/reader.js?v=45"></script>
-    <script src="js/app.js?v=45"></script>
+    <script src="js/db.js?v=46"></script>
+    <script src="js/utils.js?v=46"></script>
+    <script src="js/translate.js?v=46"></script>
+    <script src="js/reader.js?v=46"></script>
+    <script src="js/app.js?v=46"></script>
 </body>
 </html>

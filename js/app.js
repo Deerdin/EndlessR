@@ -1561,7 +1561,7 @@ const app = {
         const btnHomeTheme = document.getElementById('btn-home-theme-toggle');
         if (btnHomeTheme) {
             const iconName = normalized === 'dark' ? 'sun' : 'moon';
-            btnHomeTheme.innerHTML = `<i data-lucide="${iconName}" style="width: 18px; height: 18px;"></i>`;
+            btnHomeTheme.innerHTML = `<i data-lucide="${iconName}" style="width: 17px; height: 17px;"></i>`;
             btnHomeTheme.title = normalized === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme';
             if (typeof lucide !== 'undefined') {
                 lucide.createIcons({ node: btnHomeTheme });
@@ -2859,7 +2859,7 @@ const app = {
         const bWords = Number(book.wordCount) || 0;
         const bPages = Number(book.pageCount) || 0;
         const bookStatsHtml = bWords > 0
-            ? `<span style="font-size: 10px; color: var(--text-muted); display: block; margin-top: 2px;">${utils.formatNumber(bPages)} Pages • ${utils.formatNumber(bWords)} Words</span>`
+            ? `<span style="font-size: 10px; color: var(--text-muted); display: block; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${utils.formatNumber(bPages)} Pages • ${utils.formatNumber(bWords)} Words</span>`
             : '';
 
         card.innerHTML = `
