@@ -324,11 +324,11 @@ const app = {
             let badgeText = '';
             if (b.volumeLabel && b.volumeLabel.trim()) {
                 const rawLbl = b.volumeLabel.trim();
-                badgeText = /^\d+$/.test(rawLbl) ? `${rawLbl}. Cilt` : rawLbl;
+                badgeText = /^\d+$/.test(rawLbl) ? `Vol. ${rawLbl}` : rawLbl;
             } else if (entry.info.volumeNumber !== null) {
-                badgeText = `${entry.info.volumeNumber}. Cilt`;
+                badgeText = `Vol. ${entry.info.volumeNumber}`;
             } else {
-                badgeText = `${idx + 1}. Cilt`;
+                badgeText = `Vol. ${idx + 1}`;
             }
             return {
                 ...b,
@@ -342,7 +342,7 @@ const app = {
 
         const analyzed = (books || []).map(book => {
             const info = this.extractVolumeAndBaseTitle(book);
-            const normAuthor = this.normalizeTextKey(book.author || 'Bilinmeyen Yazar');
+            const normAuthor = this.normalizeTextKey(book.author || 'Unknown Author');
             const normExplicit = this.normalizeTextKey(info.explicitBaseTitle);
             const normNumeric = this.normalizeTextKey(info.numericBaseTitle);
             return {
@@ -362,8 +362,8 @@ const app = {
                 key: cf.id,
                 isCustom: true,
                 customFolderId: cf.id,
-                title: (cf.title || 'İsimsiz Klasör').trim(),
-                author: (cf.author || 'Klasör').trim(),
+                title: (cf.title || 'Untitled Folder').trim(),
+                author: (cf.author || 'Folder').trim(),
                 coverUrl: cf.coverUrl || null,
                 inBookshelf: !!cf.inBookshelf,
                 entries: [],
@@ -426,7 +426,7 @@ const app = {
                     isCustom: false,
                     customFolderId: null,
                     title: displayBaseTitle,
-                    author: (item.book.author || 'Bilinmeyen Yazar').trim(),
+                    author: (item.book.author || 'Unknown Author').trim(),
                     coverUrl: null,
                     inBookshelf: false,
                     entries: [],
@@ -494,7 +494,7 @@ const app = {
                 const singleBook = grp.entries[0].book;
                 if (singleBook.volumeLabel && singleBook.volumeLabel.trim()) {
                     const rawLbl = singleBook.volumeLabel.trim();
-                    singleBook._computedVolumeBadge = /^\d+$/.test(rawLbl) ? `${rawLbl}. Cilt` : rawLbl;
+                    singleBook._computedVolumeBadge = /^\d+$/.test(rawLbl) ? `Vol. ${rawLbl}` : rawLbl;
                 }
                 libraryItems.push({
                     isFolder: false,
@@ -509,7 +509,7 @@ const app = {
             const singleBook = item.book;
             if (singleBook.volumeLabel && singleBook.volumeLabel.trim()) {
                 const rawLbl = singleBook.volumeLabel.trim();
-                singleBook._computedVolumeBadge = /^\d+$/.test(rawLbl) ? `${rawLbl}. Cilt` : rawLbl;
+                singleBook._computedVolumeBadge = /^\d+$/.test(rawLbl) ? `Vol. ${rawLbl}` : rawLbl;
             }
             libraryItems.push({
                 isFolder: false,
@@ -530,12 +530,20 @@ const app = {
         let totalWords = 0;
 
         for (const b of books) {
-            totalChapters += (typeof b.chapterCount === 'number' && b.chapterCount > 0) ? b.chapterCount : 0;
-            totalPages += (typeof b.pageCount === 'number' && b.pageCount > 0) ? b.pageCount : (b.totalPages || 0);
-            totalWords += (typeof b.wordCount === 'number' && b.wordCount > 0) ? b.wordCount : 0;
+            const bChapters = Number(b.chapterCount) || 0;
+            const bPages = Number(b.pageCount) || Number(b.totalPages) || 0;
+            const bWords = Number(b.wordCount) || 0;
+
+            totalChapters += bChapters > 0 ? bChapters : 1;
+            totalPages += bPages > 0 ? bPages : (bWords > 0 ? Math.max(1, Math.ceil(bWords / 250)) : 0);
+            totalWords += bWords > 0 ? bWords : 0;
         }
 
         return {
+            volumes: books.length,
+            chapters: totalChapters,
+            pages: totalPages,
+            words: totalWords,
             volumeCount: books.length,
             chapterCount: totalChapters,
             pageCount: totalPages,
@@ -546,31 +554,38 @@ const app = {
     // Önceden yüklenmiş ve henüz kelime/sayfa/bölüm istatistiği hesaplanmamış kitapları arka planda analiz edip kaydeder
     async ensureMissingBooksStats() {
         if (this._isCalculatingMissingStats) return;
-        const missing = (this.allLoadedBooks || []).filter(b => !b.statsCalculated && !(b.wordCount > 0));
+        this._attemptedStatsIds = this._attemptedStatsIds || new Set();
+        const missing = (this.allLoadedBooks || []).filter(b =>
+            b && b.id && !this._attemptedStatsIds.has(b.id) && !(Number(b.wordCount) > 0)
+        );
         if (missing.length === 0) return;
 
         this._isCalculatingMissingStats = true;
         let anyUpdated = false;
         try {
             for (const b of missing) {
+                this._attemptedStatsIds.add(b.id);
                 const fullBook = await booksDb.getBook(b.id);
                 if (fullBook && fullBook.file && typeof utils !== 'undefined' && utils.computeBookStats) {
                     const stats = await utils.computeBookStats(fullBook.file, fullBook.type);
+                    const wCount = Number(stats.wordCount) || 0;
+                    const pCount = Number(stats.pageCount) || (wCount > 0 ? Math.max(1, Math.ceil(wCount / 250)) : 0);
+                    const cCount = Number(stats.chapterCount) || 1;
                     await booksDb.updateBookMetadata(b.id, {
-                        wordCount: stats.wordCount || 0,
-                        pageCount: stats.pageCount || 0,
-                        chapterCount: stats.chapterCount || 0,
-                        statsCalculated: true
+                        wordCount: wCount,
+                        pageCount: pCount,
+                        chapterCount: cCount,
+                        statsCalculated: wCount > 0
                     });
-                    b.wordCount = stats.wordCount || 0;
-                    b.pageCount = stats.pageCount || 0;
-                    b.chapterCount = stats.chapterCount || 0;
-                    b.statsCalculated = true;
+                    b.wordCount = wCount;
+                    b.pageCount = pCount;
+                    b.chapterCount = cCount;
+                    b.statsCalculated = wCount > 0;
                     anyUpdated = true;
                 }
             }
         } catch (e) {
-            console.warn("Eksik kitap istatistikleri hesaplanırken hata:", e);
+            console.warn("Error calculating missing book stats:", e);
         } finally {
             this._isCalculatingMissingStats = false;
         }
@@ -644,9 +659,9 @@ const app = {
             if (emptyState) {
                 emptyState.style.display = 'flex';
                 const pEl = emptyState.querySelector('p');
-                if (pEl) pEl.textContent = 'Kütüphanen henüz boş. Buradan ilk EPUB veya PDF kitabını yükleyebilirsin!';
+                if (pEl) pEl.textContent = 'Your library is empty. Upload your first EPUB or PDF book from here!';
             }
-            if (statsSummary) statsSummary.textContent = "Kütüphanede kitap bulunmuyor.";
+            if (statsSummary) statsSummary.textContent = "No books in library.";
             this.closeFolderModal();
         } else {
             // Okuma istatistikleri
@@ -655,7 +670,7 @@ const app = {
             const readingBooks = books.filter(b => b.progressPercent > 0 && b.progressPercent < 95).length;
             
             if (statsSummary) {
-                statsSummary.textContent = `${totalBooks} kitap yüklü. (${readingBooks} okunuyor, ${readBooks} bitti)`;
+                statsSummary.textContent = `${totalBooks} books loaded. (${readingBooks} reading, ${readBooks} finished)`;
             }
 
             const libraryItems = this.groupBooksIntoLibraryItems(books, this.customFolders);
@@ -687,8 +702,8 @@ const app = {
                     const pEl = emptyState.querySelector('p');
                     if (pEl) {
                         pEl.textContent = bookshelfItems.length > 0
-                            ? 'Ana sayfadaki tüm klasör ve kitaplarınız Kitaplık (Profil) sekmesine taşındı.'
-                            : 'Kütüphanen henüz boş. Buradan ilk EPUB veya PDF kitabını yükleyebilirsin!';
+                            ? 'All your folders and books have been moved to the Library (Profile) tab.'
+                            : 'Your library is empty. Upload your first EPUB or PDF book from here!';
                     }
                 }
             } else {
@@ -710,7 +725,7 @@ const app = {
                     profileBookGrid.innerHTML = `
                         <div class="empty-state" style="display: flex; grid-column: 1 / -1; padding: 30px 10px;">
                             <i data-lucide="star" class="empty-icon" style="width: 48px; height: 48px;"></i>
-                            <p>Kitaplığınız henüz boş. Ana sayfadaki klasörlerin veya kitapların sağ üst köşesindeki yıldız ikonuna dokunarak bir bütün halinde buraya taşıyabilirsiniz.</p>
+                            <p>Your Library is empty. Tap the star icon on the top right of folders or books on the Home page to move them here.</p>
                         </div>
                     `;
                 } else {
@@ -757,7 +772,7 @@ const app = {
 
     // Kitap Silme İşlemi
     async deleteBook(id, title, force = false) {
-        if (force || confirm(`"${title}" kitabını silmek istediğinize emin misiniz?`)) {
+        if (force || confirm(`Are you sure you want to delete "${title}"?`)) {
             const success = await booksDb.deleteBook(id);
             if (success) {
                 const panel = document.getElementById('book-details-panel');
@@ -765,7 +780,7 @@ const app = {
                 
                 await this.loadLibrary();
             } else {
-                alert("Kitap silinemedi.");
+                alert("Could not delete the book.");
             }
         }
     },
@@ -775,8 +790,8 @@ const app = {
         if (!group) return;
         const bookCount = group.books ? group.books.length : 0;
         const msg = bookCount > 0
-            ? `"${group.title}" klasörünü ve içindeki ${bookCount} kitabı silmek istediğinize emin misiniz?`
-            : `"${group.title}" klasörünü silmek istediğinize emin misiniz?`;
+            ? `Are you sure you want to delete the folder "${group.title}" and all ${bookCount} books inside it?`
+            : `Are you sure you want to delete the folder "${group.title}"?`;
 
         if (confirm(msg)) {
             if (group.books && group.books.length > 0) {
@@ -810,13 +825,13 @@ const app = {
         if (titleInput) titleInput.value = '';
         if (authorInput) authorInput.value = '';
         if (coverPreview) {
-            coverPreview.src = utils.generateGradientPlaceholder('Klasör', 'EndlessR');
+            coverPreview.src = utils.generateGradientPlaceholder('Folder', 'EndlessR');
         }
 
         if (listEl) {
             listEl.innerHTML = '';
             if (this.allLoadedBooks.length === 0) {
-                listEl.innerHTML = `<p style="font-size: 12px; color: var(--text-muted); text-align: center; padding: 12px;">Henüz kütüphanede kitap yok. Boş klasör oluşturup sonradan kitap ekleyebilirsiniz.</p>`;
+                listEl.innerHTML = `<p style="font-size: 12px; color: var(--text-muted); text-align: center; padding: 12px;">No books in library yet. You can create an empty folder and add books later.</p>`;
             } else {
                 this.allLoadedBooks.forEach(book => {
                     const row = document.createElement('label');
@@ -880,10 +895,10 @@ const app = {
         const titleInput = document.getElementById('create-folder-title-input');
         const authorInput = document.getElementById('create-folder-author-input');
         const title = (titleInput ? titleInput.value : '').trim();
-        const author = (authorInput ? authorInput.value : '').trim() || 'Klasör';
+        const author = (authorInput ? authorInput.value : '').trim() || 'Folder';
 
         if (!title) {
-            alert('Lütfen bir klasör adı girin.');
+            alert('Please enter a folder name.');
             return;
         }
 
@@ -937,12 +952,15 @@ const app = {
         const elStatPages = document.getElementById('folder-stat-pages');
         const elStatWords = document.getElementById('folder-stat-words');
 
-        if (titleEl) titleEl.textContent = group.title;
-        if (subtitleEl) subtitleEl.textContent = `${group.author} • ${group.books.length} Cilt`;
+        const bookCount = Array.isArray(group.books) ? group.books.length : 0;
+        const volWord = bookCount === 1 ? 'Volume' : 'Volumes';
 
-        // Klasör İstatistiklerini Güncelle
+        if (titleEl) titleEl.textContent = group.title;
+        if (subtitleEl) subtitleEl.textContent = `${group.author} • ${bookCount} ${volWord}`;
+
+        // Klasör İstatistiklerini Güncelle (Volumes her zaman klasör içerisindeki kitap adedi kadardır)
         const stats = this.computeGroupStats(group);
-        if (elStatVolumes) elStatVolumes.textContent = utils.formatNumber(stats.volumes);
+        if (elStatVolumes) elStatVolumes.textContent = utils.formatNumber(bookCount);
         if (elStatChapters) elStatChapters.textContent = utils.formatNumber(stats.chapters);
         if (elStatPages) elStatPages.textContent = utils.formatNumber(stats.pages);
         if (elStatWords) elStatWords.textContent = utils.formatNumber(stats.words);
@@ -952,7 +970,7 @@ const app = {
             const inBookshelf = this.isFolderInBookshelf(group);
             btnBookshelf.style.color = inBookshelf ? '#f59e0b' : 'var(--text-secondary)';
             btnBookshelf.style.borderColor = inBookshelf ? 'rgba(245, 158, 11, 0.5)' : 'var(--border-color)';
-            btnBookshelf.title = inBookshelf ? 'Kitaplıktan Çıkar (Ana Sayfaya Taşı)' : 'Tüm Klasörü Kitaplığa Ekle';
+            btnBookshelf.title = inBookshelf ? 'Remove from Library (Move to Home)' : 'Add Entire Folder to Library';
             btnBookshelf.innerHTML = `<i data-lucide="star" style="width: 15px; height: 15px; ${inBookshelf ? 'fill: #f59e0b;' : ''}"></i>`;
         }
 
@@ -962,7 +980,7 @@ const app = {
                 gridEl.innerHTML = `
                     <div class="empty-state" style="display: flex; grid-column: 1 / -1; padding: 30px 10px;">
                         <i data-lucide="folder-open" class="empty-icon" style="width: 48px; height: 48px;"></i>
-                        <p>Bu klasörde henüz kitap yok. Sağ üstteki düzenleme (kalem) butonuna basarak klasöre kitap ekleyebilirsiniz.</p>
+                        <p>There are no books in this folder yet. Tap the edit (pencil) button on the top right to add books.</p>
                     </div>
                 `;
             } else {
@@ -1033,7 +1051,7 @@ const app = {
         if (booksListEl) {
             booksListEl.innerHTML = '';
             if (group.books.length === 0) {
-                booksListEl.innerHTML = `<p style="font-size: 12px; color: var(--text-muted); text-align: center; padding: 10px;">Klasörde henüz kitap bulunmuyor.</p>`;
+                booksListEl.innerHTML = `<p style="font-size: 12px; color: var(--text-muted); text-align: center; padding: 10px;">No books in this folder yet.</p>`;
             } else {
                 group.books.forEach(book => {
                     const row = document.createElement('div');
@@ -1051,52 +1069,52 @@ const app = {
                     const bPages = Number(book.pageCount) || 0;
                     const bWords = Number(book.wordCount) || 0;
                     const statsSnippet = bWords > 0
-                        ? ` • ${bChapters} Bölüm • ${utils.formatNumber(bPages)} Sayfa • ${utils.formatNumber(bWords)} Kelime`
+                        ? ` • ${bChapters} Ch • ${utils.formatNumber(bPages)} Pages • ${utils.formatNumber(bWords)} Words`
                         : '';
 
                     row.innerHTML = `
                         <div class="folder-book-row-main">
-                            <img src="${thumbSrc}" alt="${book.title}" class="folder-book-thumb" title="Cilt kapağını değiştirmek için tıklayın" style="cursor: pointer;">
+                            <img src="${thumbSrc}" alt="${book.title}" class="folder-book-thumb" title="Click to change volume cover" style="cursor: pointer;">
                             <div class="folder-book-row-info">
                                 <span class="folder-book-row-title">${book.title}</span>
                                 <span class="folder-book-row-sub">${badgeLabel ? badgeLabel + ' • ' : ''}${book.author}${statsSnippet}</span>
                             </div>
                             <div class="folder-book-row-actions">
-                                <button type="button" class="row-action-btn btn-row-cover" title="Cilt Kapağını Değiştir">
+                                <button type="button" class="row-action-btn btn-row-cover" title="Change Volume Cover">
                                     <i data-lucide="image" style="width: 14px; height: 14px;"></i>
                                 </button>
-                                <button type="button" class="row-action-btn btn-row-edit" title="Başlık / Yazar / Cilt Düzenle">
+                                <button type="button" class="row-action-btn btn-row-edit" title="Edit Title / Author / Volume">
                                     <i data-lucide="edit-2" style="width: 14px; height: 14px;"></i>
                                 </button>
-                                <button type="button" class="row-action-btn btn-row-unfolder" title="Klasörden Çıkar">
+                                <button type="button" class="row-action-btn btn-row-unfolder" title="Remove from Folder">
                                     <i data-lucide="folder-minus" style="width: 14px; height: 14px;"></i>
                                 </button>
-                                <button type="button" class="row-action-btn btn-row-delete" title="Kitabı Sil">
+                                <button type="button" class="row-action-btn btn-row-delete" title="Delete Book">
                                     <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
                                 </button>
                             </div>
                         </div>
                         <div class="folder-book-inline-edit">
                             <div class="input-group">
-                                <label>Kitap Başlığı</label>
-                                <input type="text" class="inline-book-title" value="${(book.title || '').replace(/"/g, '&quot;')}" placeholder="Kitap başlığı...">
+                                <label>Book Title</label>
+                                <input type="text" class="inline-book-title" value="${(book.title || '').replace(/"/g, '&quot;')}" placeholder="Book title...">
                             </div>
                             <div class="folder-book-inline-grid">
                                 <div class="input-group">
-                                    <label>Yazar</label>
-                                    <input type="text" class="inline-book-author" value="${(book.author || '').replace(/"/g, '&quot;')}" placeholder="Yazar...">
+                                    <label>Author</label>
+                                    <input type="text" class="inline-book-author" value="${(book.author || '').replace(/"/g, '&quot;')}" placeholder="Author...">
                                 </div>
                                 <div class="input-group">
-                                    <label>Cilt Etiketi</label>
-                                    <input type="text" class="inline-book-volume" value="${(book.volumeLabel || badgeLabel || '').replace(/"/g, '&quot;')}" placeholder="Örn: 1. Cilt">
+                                    <label>Volume Label</label>
+                                    <input type="text" class="inline-book-volume" value="${(book.volumeLabel || badgeLabel || '').replace(/"/g, '&quot;')}" placeholder="e.g. Vol. 1">
                                 </div>
                             </div>
                             <div style="display: flex; gap: 8px;">
                                 <button type="button" class="action-btn btn-inline-cover" style="padding: 8px; font-size: 12px; flex: 1; background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; gap: 6px;">
-                                    <i data-lucide="image" style="width: 14px; height: 14px;"></i> Kapağı Değiştir
+                                    <i data-lucide="image" style="width: 14px; height: 14px;"></i> Change Cover
                                 </button>
                                 <button type="button" class="action-btn btn-inline-save" style="padding: 8px; font-size: 12px; flex: 1;">
-                                    Değişiklikleri Kaydet
+                                    Save Changes
                                 </button>
                             </div>
                         </div>
@@ -1129,10 +1147,10 @@ const app = {
                     if (btnInlineSave) {
                         btnInlineSave.onclick = async () => {
                             const newBookTitle = row.querySelector('.inline-book-title').value.trim();
-                            const newBookAuthor = row.querySelector('.inline-book-author').value.trim() || 'Bilinmeyen Yazar';
+                            const newBookAuthor = row.querySelector('.inline-book-author').value.trim() || 'Unknown Author';
                             const newBookVolume = row.querySelector('.inline-book-volume').value.trim();
                             if (!newBookTitle) {
-                                alert('Kitap başlığı boş bırakılamaz.');
+                                alert('Book title cannot be empty.');
                                 return;
                             }
                             let targetFolderId = book.folderId;
@@ -1168,7 +1186,7 @@ const app = {
                     const btnRowDelete = row.querySelector('.btn-row-delete');
                     if (btnRowDelete) {
                         btnRowDelete.onclick = async () => {
-                            if (confirm(`"${book.title}" kitabını tamamen silmek istediğinize emin misiniz?`)) {
+                            if (confirm(`Are you sure you want to permanently delete "${book.title}"?`)) {
                                 await booksDb.deleteBook(book.id);
                                 await this.loadLibrary();
                             }
@@ -1210,8 +1228,8 @@ const app = {
                                 <span class="folder-book-row-sub">${book.author}</span>
                             </div>
                             <div class="folder-book-row-actions">
-                                <button type="button" class="row-action-btn btn-row-add" title="Bu Klasöre Ekle">
-                                    <i data-lucide="plus" style="width: 13px; height: 13px;"></i> Ekle
+                                <button type="button" class="row-action-btn btn-row-add" title="Add to This Folder">
+                                    <i data-lucide="plus" style="width: 13px; height: 13px;"></i> Add
                                 </button>
                             </div>
                         </div>
@@ -1285,10 +1303,10 @@ const app = {
         const titleInput = document.getElementById('manage-folder-title-input');
         const authorInput = document.getElementById('manage-folder-author-input');
         const newTitle = (titleInput ? titleInput.value : '').trim();
-        const newAuthor = (authorInput ? authorInput.value : '').trim() || 'Bilinmeyen Yazar';
+        const newAuthor = (authorInput ? authorInput.value : '').trim() || 'Unknown Author';
 
         if (!newTitle) {
-            alert('Klasör başlığı boş bırakılamaz.');
+            alert('Folder title cannot be empty.');
             return;
         }
 
@@ -1323,7 +1341,7 @@ const app = {
         const quickWrap = document.getElementById('edit-book-quick-series-wrap');
         const quickList = document.getElementById('edit-book-quick-series-list');
 
-        if (heading) heading.textContent = 'Kitap Bilgilerini Düzenle';
+        if (heading) heading.textContent = 'Edit Book Details';
         if (titleInput) titleInput.value = book.title || '';
         if (authorInput) authorInput.value = book.author || '';
         if (coverPreview) {
@@ -1402,11 +1420,11 @@ const app = {
         const volumeInput = document.getElementById('edit-book-volume-input');
 
         const newTitle = (titleInput ? titleInput.value : '').trim();
-        const newAuthor = (authorInput ? authorInput.value : '').trim() || 'Bilinmeyen Yazar';
+        const newAuthor = (authorInput ? authorInput.value : '').trim() || 'Unknown Author';
         const newVolume = (volumeInput ? volumeInput.value : '').trim();
 
         if (!newTitle) {
-            alert('Lütfen geçerli bir kitap başlığı girin.');
+            alert('Please enter a valid book title.');
             return;
         }
 
@@ -1445,7 +1463,7 @@ const app = {
             recentWordsList.innerHTML = '';
             const recentWords = words.slice(0, 5);
             if (recentWords.length === 0) {
-                recentWordsList.innerHTML = '<p style="font-size: 13px; color: var(--text-muted); text-align: center; padding: 10px 0;">Henüz kaydedilmiş kelime yok.</p>';
+                recentWordsList.innerHTML = '<p style="font-size: 13px; color: var(--text-muted); text-align: center; padding: 10px 0;">No saved words yet.</p>';
             } else {
                 recentWords.forEach(item => {
                     const card = document.createElement('div');
@@ -1485,14 +1503,14 @@ const app = {
             card.className = 'word-card glass';
             
             // Tarih formatı
-            const dateStr = new Date(item.addedAt).toLocaleDateString('tr-TR', {
+            const dateStr = new Date(item.addedAt).toLocaleDateString('en-US', {
                 day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
             });
 
             card.innerHTML = `
                 <div class="word-header">
                     <span class="word-title">${item.word}</span>
-                    <button class="btn-delete-word" title="Sözlükten Sil" onclick="app.deleteWord('${item.id}')">
+                    <button class="btn-delete-word" title="Remove from Dictionary" onclick="app.deleteWord('${item.id}')">
                         <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>
                     </button>
                 </div>
@@ -1544,7 +1562,7 @@ const app = {
         if (btnHomeTheme) {
             const iconName = normalized === 'dark' ? 'sun' : 'moon';
             btnHomeTheme.innerHTML = `<i data-lucide="${iconName}" style="width: 18px; height: 18px;"></i>`;
-            btnHomeTheme.title = normalized === 'dark' ? 'Aydınlık Temaya Geç' : 'Karanlık Temaya Geç';
+            btnHomeTheme.title = normalized === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme';
             if (typeof lucide !== 'undefined') {
                 lucide.createIcons({ node: btnHomeTheme });
             }
@@ -1616,7 +1634,7 @@ const app = {
         // Dosya türü kontrolü
         const fileExt = file.name.split('.').pop().toLowerCase();
         if (fileExt !== 'epub' && fileExt !== 'pdf') {
-            alert("Sadece .epub veya .pdf dosyaları yüklenebilir.");
+            alert("Only .epub or .pdf files can be uploaded.");
             return;
         }
 
@@ -1628,7 +1646,7 @@ const app = {
         bookGrid.innerHTML = `
             <div class="loader-spinner" style="padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; grid-column: span 2;">
                 <i data-lucide="loader-2" class="upload-icon spin-icon" style="width: 32px; height: 32px; color: var(--accent-color);"></i>
-                <p style="font-size: 13px; color: var(--text-secondary); text-align: center;">Kitap çözümleniyor ve IndexedDB'ye kaydediliyor, lütfen bekleyin...</p>
+                <p style="font-size: 13px; color: var(--text-secondary); text-align: center;">Parsing book and saving to database, please wait...</p>
             </div>
         `;
         lucide.createIcons();
@@ -1653,7 +1671,7 @@ const app = {
                     id: utils.generateId(),
                     title: metadata.title || cleanFileName,
                     originalFileName: cleanFileName,
-                    author: metadata.author || "Bilinmeyen Yazar",
+                    author: metadata.author || "Unknown Author",
                     coverUrl: metadata.coverUrl,
                     type: fileExt,
                     file: arrayBuffer, // ArrayBuffer doğrudan IndexedDB'de binary saklanır
@@ -1670,19 +1688,19 @@ const app = {
                 await booksDb.saveBook(newBook);
                 
                 // Başarı mesajı ve yenileme
-                alert("Kitap yüklendi.");
+                alert("Book uploaded.");
                 await this.loadLibrary();
             };
 
             reader.onerror = () => {
-                throw new Error("Dosya okunurken bir hata oluştu.");
+                throw new Error("An error occurred while reading the file.");
             };
 
             reader.readAsArrayBuffer(file);
 
         } catch (err) {
-            console.error("Yükleme Hatası:", err);
-            alert("Dosya yüklenemedi.");
+            console.error("Upload Error:", err);
+            alert("Could not upload file.");
             await this.loadLibrary();
         }
     },
@@ -2119,7 +2137,7 @@ const app = {
                 const context = document.getElementById('manual-context').value.trim();
 
                 if (!word || !meaning) {
-                    alert("Lütfen alanları doldurun.");
+                    alert("Please fill in the required fields.");
                     return;
                 }
 
@@ -2127,7 +2145,7 @@ const app = {
                     word: word,
                     meaning: meaning,
                     context: context,
-                    bookTitle: "Manuel Eklendi",
+                    bookTitle: "Manually Added",
                     bookId: "manual",
                     addedAt: Date.now()
                 };
@@ -2138,7 +2156,7 @@ const app = {
                     if (modal) modal.style.display = 'none';
                     await this.loadWords();
                 } else {
-                    alert("Kelime kaydedilemedi.");
+                    alert("Could not save word.");
                 }
             });
         }
@@ -2203,13 +2221,13 @@ const app = {
             if (reader.currentBookId) {
                 const bookId = reader.currentBookId;
                 const bookTitle = reader.currentBookTitle;
-                if (confirm(`"${bookTitle}" kitabını kütüphanenizden tamamen silmek istediğinize emin misiniz?`)) {
+                if (confirm(`Are you sure you want to permanently delete "${bookTitle}" from your library?`)) {
                     const success = await booksDb.deleteBook(bookId);
                     if (success) {
                         reader.closeReader();
                         app.loadLibrary();
                     } else {
-                        alert("Kitap silinemedi.");
+                        alert("Could not delete the book.");
                     }
                 }
             }
@@ -2395,24 +2413,24 @@ const app = {
                     const hasToc = reader.numberedChapters && reader.numberedChapters.length > 0;
                     const total = hasToc ? reader.numberedChapters.length : (reader.epubBook && reader.epubBook.spine ? reader.epubBook.spine.length : 1);
                     const idx = Math.min(total - 1, Math.max(0, val - 1));
-                    const chapterLabel = hasToc ? reader.numberedChapters[idx].label : `Bölüm ${idx + 1}`;
+                    const chapterLabel = hasToc ? reader.numberedChapters[idx].label : `Chapter ${idx + 1}`;
                     const percent = Math.round(((idx + 1) / total) * 100);
                     
                     document.getElementById('reader-progress-percent').textContent = percent + '%';
                     document.getElementById('reader-progress-label').textContent = hasToc
-                        ? `Bölüm ${idx + 1}: ${chapterLabel} (${idx + 1} / ${total})`
-                        : `Bölüm ${idx + 1} / ${total}`;
+                        ? `Chapter ${idx + 1}: ${chapterLabel} (${idx + 1} / ${total})`
+                        : `Chapter ${idx + 1} / ${total}`;
                     const chIndicator = document.getElementById('panel-chapter-indicator');
                     if (chIndicator) {
-                        chIndicator.textContent = `Bölüm ${idx + 1} / ${total} (${percent}%)`;
+                        chIndicator.textContent = `Chapter ${idx + 1} / ${total} (${percent}%)`;
                     }
                 } else if (reader.currentBookType === 'pdf' && reader.pdfDocument) {
                     const percent = Math.round((val / reader.pdfTotalPages) * 100);
                     document.getElementById('reader-progress-percent').textContent = percent + '%';
-                    document.getElementById('reader-progress-label').textContent = `Sayfa ${val} / ${reader.pdfTotalPages}`;
+                    document.getElementById('reader-progress-label').textContent = `Page ${val} / ${reader.pdfTotalPages}`;
                     const chIndicator = document.getElementById('panel-chapter-indicator');
                     if (chIndicator) {
-                        chIndicator.textContent = `Sayfa ${val} / ${reader.pdfTotalPages} (${percent}%)`;
+                        chIndicator.textContent = `Page ${val} / ${reader.pdfTotalPages} (${percent}%)`;
                     }
                 }
             });
@@ -2588,7 +2606,7 @@ const app = {
                 const replacedText = document.getElementById('replace-new-input').value.trim();
                 
                 if (!originalText || !replacedText) {
-                    alert("Lütfen alanı doldurun.");
+                    alert("Please fill in the fields.");
                     return;
                 }
                 
@@ -2617,7 +2635,7 @@ const app = {
                         }
                     }
                 } else {
-                    alert("Değişiklik kaydedilemedi.");
+                    alert("Could not save replacement.");
                 }
             });
         }
@@ -2713,6 +2731,7 @@ const app = {
         }
 
         const totalVolumes = group.books.length;
+        const volWord = totalVolumes === 1 ? 'Volume' : 'Volumes';
         const avgProgress = totalVolumes > 0
             ? Math.round(group.books.reduce((acc, b) => acc + (b.progressPercent || 0), 0) / totalVolumes)
             : 0;
@@ -2720,17 +2739,17 @@ const app = {
         const inBookshelf = this.isFolderInBookshelf(group);
         const stats = this.computeGroupStats(group);
         const statsText = stats.words > 0
-            ? `${utils.formatNumber(stats.chapters)} Bölüm • ${utils.formatNumber(stats.pages)} Sayfa • ${utils.formatNumber(stats.words)} Kelime`
-            : `${totalVolumes} Cilt`;
+            ? `${utils.formatNumber(stats.chapters)} Ch • ${utils.formatNumber(stats.pages)} Pages • ${utils.formatNumber(stats.words)} Words`
+            : `${totalVolumes} ${volWord}`;
 
         card.innerHTML = `
-            <button class="btn-delete-book" title="Klasörü Sil">
+            <button class="btn-delete-book" title="Delete Folder">
                 <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
             </button>
-            <button class="btn-edit-book" title="Klasörü, Kapakları ve Kitapları Düzenle" style="right: 40px;">
+            <button class="btn-edit-book" title="Edit Folder, Covers & Books" style="right: 40px;">
                 <i data-lucide="edit-2" style="width: 13px; height: 13px;"></i>
             </button>
-            <button class="btn-favorite-book" title="${inBookshelf ? 'Kitaplıktan Çıkar (Ana Sayfaya Taşı)' : 'Tüm Klasörü Kitaplığa Ekle'}" style="position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 3; color: ${inBookshelf ? '#f59e0b' : '#d1d5db'}; padding: 0;">
+            <button class="btn-favorite-book" title="${inBookshelf ? 'Remove from Library (Move to Home)' : 'Add Entire Folder to Library'}" style="position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 3; color: ${inBookshelf ? '#f59e0b' : '#d1d5db'}; padding: 0;">
                 <i data-lucide="star" style="width: 14px; height: 14px; ${inBookshelf ? 'fill: #f59e0b;' : ''}"></i>
             </button>
             <div class="folder-stack-wrapper">
@@ -2740,7 +2759,7 @@ const app = {
                     ${coverHtml}
                     <div class="folder-count-badge">
                         <i data-lucide="folder"></i>
-                        <span>${totalVolumes} Cilt</span>
+                        <span>${totalVolumes} ${volWord}</span>
                     </div>
                 </div>
             </div>
@@ -2753,7 +2772,7 @@ const app = {
                 <div class="progress-bar-bg">
                     <div class="progress-bar-fill" style="width: ${avgProgress}%"></div>
                 </div>
-                <span class="progress-text">${completedCount}/${totalVolumes} cilt bitti (%${avgProgress})</span>
+                <span class="progress-text">${completedCount}/${totalVolumes} volumes read (${avgProgress}%)</span>
             </div>
         `;
 
@@ -2822,17 +2841,17 @@ const app = {
 
         // Klasör içerisindeyken cilt kapağını/bilgisini tek tıkla değiştirebilmek için sağ üstte kalem butonu göster
         const topButtonsHtml = options.inFolder ? `
-            <button class="btn-edit-book" title="Cilt Kapağını / Bilgilerini Düzenle" style="right: 6px;">
+            <button class="btn-edit-book" title="Edit Volume Cover / Details" style="right: 6px;">
                 <i data-lucide="edit-2" style="width: 13px; height: 13px;"></i>
             </button>
         ` : `
-            <button class="btn-delete-book" title="Kitabı Sil">
+            <button class="btn-delete-book" title="Delete Book">
                 <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
             </button>
-            <button class="btn-edit-book" title="Kitap Kapağını / Başlığını Düzenle">
+            <button class="btn-edit-book" title="Edit Book Cover / Title">
                 <i data-lucide="edit-2" style="width: 13px; height: 13px;"></i>
             </button>
-            <button class="btn-favorite-book" title="${isFav ? 'Kitaplıktan Çıkar (Ana Sayfaya Taşı)' : 'Kitaplığa Ekle'}" style="position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 3; color: ${isFav ? '#f59e0b' : '#d1d5db'}; padding: 0;">
+            <button class="btn-favorite-book" title="${isFav ? 'Remove from Library (Move to Home)' : 'Add to Library'}" style="position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 3; color: ${isFav ? '#f59e0b' : '#d1d5db'}; padding: 0;">
                 <i data-lucide="star" style="width: 14px; height: 14px; ${isFav ? 'fill: #f59e0b;' : ''}"></i>
             </button>
         `;
@@ -2840,7 +2859,7 @@ const app = {
         const bWords = Number(book.wordCount) || 0;
         const bPages = Number(book.pageCount) || 0;
         const bookStatsHtml = bWords > 0
-            ? `<span style="font-size: 10px; color: var(--text-muted); display: block; margin-top: 2px;">${utils.formatNumber(bPages)} Sayfa • ${utils.formatNumber(bWords)} Kelime</span>`
+            ? `<span style="font-size: 10px; color: var(--text-muted); display: block; margin-top: 2px;">${utils.formatNumber(bPages)} Pages • ${utils.formatNumber(bWords)} Words</span>`
             : '';
 
         card.innerHTML = `
@@ -2859,7 +2878,7 @@ const app = {
                 <div class="progress-bar-bg">
                     <div class="progress-bar-fill" style="width: ${book.progressPercent}%"></div>
                 </div>
-                <span class="progress-text">%${book.progressPercent} tamamlandı</span>
+                <span class="progress-text">${book.progressPercent}% completed</span>
             </div>
         `;
 
@@ -2893,7 +2912,7 @@ const app = {
 
         card.onclick = () => {
             if (this.isLibraryDeleteMode && !options.inFolder) {
-                if (confirm(`"${book.title}" kitabını silmek istiyor musunuz?`)) {
+                if (confirm(`Do you want to delete "${book.title}"?`)) {
                     this.deleteBook(book.id, book.title, true);
                 }
                 return;
@@ -2922,7 +2941,7 @@ const app = {
             listContainer.innerHTML = `
                 <div class="empty-state" style="display: flex;">
                     <i data-lucide="edit-3" class="empty-icon"></i>
-                    <p>Henüz değiştirilen kelime veya cümle bulunmuyor.</p>
+                    <p>No replaced words or phrases yet.</p>
                 </div>
             `;
             lucide.createIcons();
@@ -2930,7 +2949,7 @@ const app = {
         }
 
         for (const item of list) {
-            let bookTitle = "Tüm Kitaplar (Global)";
+            let bookTitle = "All Books (Global)";
             if (item.bookId) {
                 const book = await booksDb.getBook(item.bookId);
                 if (book) bookTitle = book.title;
@@ -2946,7 +2965,7 @@ const app = {
                 </div>
                 <div class="word-body" style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 11px; color: var(--text-muted);">
                     <span><i data-lucide="book" style="width: 11px; height: 11px; vertical-align: middle; margin-right: 4px;"></i>${bookTitle}</span>
-                    <button class="btn-delete-word" title="Değişikliği Sil" onclick="event.stopPropagation(); app.deleteReplacement('${item.id}')" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; transition: color 0.2s;">
+                    <button class="btn-delete-word" title="Delete Replacement" onclick="event.stopPropagation(); app.deleteReplacement('${item.id}')" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; transition: color 0.2s;">
                         <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
                     </button>
                 </div>
@@ -2958,7 +2977,7 @@ const app = {
     },
 
     async deleteReplacement(id) {
-        if (confirm("Bu kelime/cümle değişikliğini silmek istediğinize emin misiniz? Kitaptaki metinler orijinal haline dönecektir.")) {
+        if (confirm("Are you sure you want to delete this replacement? The text in the book will revert to its original form.")) {
             const success = await replacementsDb.deleteReplacement(id);
             if (success) {
                 await this.loadReplacements();
@@ -2973,7 +2992,7 @@ const app = {
                     }
                 }
             } else {
-                alert("Değişiklik silinemedi.");
+                alert("Could not delete replacement.");
             }
         }
     },
@@ -2999,12 +3018,12 @@ const app = {
             );
             const folderCount = libraryItems.filter(item => item.isFolder).length;
 
-            if (elBooks) elBooks.textContent = `${books.length} Kitap`;
-            if (elFolders) elFolders.textContent = `${folderCount} Klasör`;
-            if (elWords) elWords.textContent = `${words.length} Kelime`;
-            if (elReplacements) elReplacements.textContent = `${replacements.length} Değişim`;
+            if (elBooks) elBooks.textContent = `${books.length} Books`;
+            if (elFolders) elFolders.textContent = `${folderCount} Folders`;
+            if (elWords) elWords.textContent = `${words.length} Words`;
+            if (elReplacements) elReplacements.textContent = `${replacements.length} Replacements`;
         } catch (err) {
-            console.warn("Veritabanı istatistikleri güncellenemedi:", err);
+            console.warn("Could not update database stats:", err);
         }
     },
 
@@ -3014,7 +3033,7 @@ const app = {
         const progressBar = document.getElementById('backup-progress-bar');
 
         if (statusBox) statusBox.style.display = 'block';
-        if (statusText) statusText.textContent = 'Yedekleme hazırlanıyor...';
+        if (statusText) statusText.textContent = 'Preparing backup...';
         if (progressBar) progressBar.style.width = '5%';
 
         try {
@@ -3025,7 +3044,7 @@ const app = {
 
             const url = URL.createObjectURL(blob);
             const dateStr = new Date().toISOString().slice(0, 10);
-            const fileName = `endlessr-veritabani-yedek-${dateStr}.json`;
+            const fileName = `endlessr-database-backup-${dateStr}.json`;
 
             const a = document.createElement('a');
             a.style.display = 'none';
@@ -3040,24 +3059,24 @@ const app = {
             setTimeout(() => URL.revokeObjectURL(url), 60000);
 
             if (statusText) {
-                statusText.textContent = `Yedek indirildi (${bookCount} kitap, ${wordCount} kelime, ${replacementCount} değişim)`;
+                statusText.textContent = `Backup downloaded (${bookCount} books, ${wordCount} words, ${replacementCount} replacements)`;
             }
             if (progressBar) progressBar.style.width = '100%';
             setTimeout(() => {
                 if (statusBox) statusBox.style.display = 'none';
             }, 5000);
         } catch (err) {
-            console.error("Yedekleme hatası:", err);
-            if (statusText) statusText.textContent = 'Hata: ' + (err.message || 'Yedek oluşturulamadı.');
-            alert("Veritabanı yedeği oluşturulurken bir hata meydana geldi: " + (err.message || err));
+            console.error("Backup error:", err);
+            if (statusText) statusText.textContent = 'Error: ' + (err.message || 'Could not create backup.');
+            alert("An error occurred while creating the database backup: " + (err.message || err));
         }
     },
 
     async importAppBackup(file) {
         if (!file) return;
         const confirmRestore = confirm(
-            `"${file.name}" dosyasındaki veritabanı yedeğini geri yüklemek istiyor musunuz?\n\n` +
-            `Kitaplar, ilerlemeler, klasörler, sözlük kelimeleri, metin değişimleri ve ayarlar geri yüklenecektir.`
+            `Do you want to restore the database backup from "${file.name}"?\n\n` +
+            `Books, reading progress, folders, dictionary words, text replacements, and settings will be restored.`
         );
         if (!confirmRestore) return;
 
@@ -3066,7 +3085,7 @@ const app = {
         const progressBar = document.getElementById('backup-progress-bar');
 
         if (statusBox) statusBox.style.display = 'block';
-        if (statusText) statusText.textContent = 'Yedek dosyası okunuyor...';
+        if (statusText) statusText.textContent = 'Reading backup file...';
         if (progressBar) progressBar.style.width = '5%';
 
         try {
@@ -3088,18 +3107,18 @@ const app = {
             await this.updateDatabaseStatsUI();
 
             if (statusText) {
-                statusText.textContent = `Geri yükleme tamamlandı! (${stats.restoredBooks} kitap, ${stats.restoredWords} kelime, ${stats.restoredReplacements} değişim)`;
+                statusText.textContent = `Restore complete! (${stats.restoredBooks} books, ${stats.restoredWords} words, ${stats.restoredReplacements} replacements)`;
             }
             if (progressBar) progressBar.style.width = '100%';
 
             let infoMsg =
-                `Veritabanı başarıyla geri yüklendi!\n\n` +
-                `• Kitap / İlerleme: ${stats.restoredBooks}\n` +
-                `• Sözlük Kelimesi: ${stats.restoredWords}\n` +
-                `• Metin Değişimi: ${stats.restoredReplacements}`;
+                `Database successfully restored!\n\n` +
+                `• Books / Progress: ${stats.restoredBooks}\n` +
+                `• Dictionary Words: ${stats.restoredWords}\n` +
+                `• Text Replacements: ${stats.restoredReplacements}`;
 
             if (stats.missingFileBooks > 0 && stats.restoredBooks === 0) {
-                infoMsg += `\n\nNot: Yüklediğiniz yedek dosyası eski "Hızlı Yedek (Dosyasız)" seçeneğiyle alındığı için içinde kitapların EPUB/PDF dosyaları yer almıyor. Kitap dosyalarının da yedeğe dahil olması için "Veritabanı Yedeğini İndir" butonunu kullanabilirsiniz.`;
+                infoMsg += `\n\nNote: This backup was created without book files. Use "Download Database Backup" to include EPUB/PDF book files.`;
             }
 
             alert(infoMsg);
@@ -3108,9 +3127,9 @@ const app = {
                 if (statusBox) statusBox.style.display = 'none';
             }, 5000);
         } catch (err) {
-            console.error("Yedek geri yükleme hatası:", err);
-            if (statusText) statusText.textContent = 'Hata: ' + (err.message || 'Geri yükleme başarısız.');
-            alert("Yedek dosyası yüklenirken hata oluştu: " + (err.message || err));
+            console.error("Backup restore error:", err);
+            if (statusText) statusText.textContent = 'Error: ' + (err.message || 'Restore failed.');
+            alert("An error occurred while restoring the backup file: " + (err.message || err));
         }
     },
 

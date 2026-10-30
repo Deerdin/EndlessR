@@ -210,14 +210,14 @@ const reader = {
             }
 
             const labelText = chapterTitle
-                ? `Bölüm ${currentStep}: ${chapterTitle} (${currentStep} / ${totalSteps})`
-                : `Bölüm ${currentStep} / ${totalSteps}`;
+                ? `Chapter ${currentStep}: ${chapterTitle} (${currentStep} / ${totalSteps})`
+                : `Chapter ${currentStep} / ${totalSteps}`;
 
             this.updateProgressBar(currentStep, progressPercent, labelText);
 
             const chIndicator = document.getElementById('panel-chapter-indicator');
             if (chIndicator) {
-                chIndicator.textContent = `Bölüm ${currentStep} / ${totalSteps} (${progressPercent}%)`;
+                chIndicator.textContent = `Chapter ${currentStep} / ${totalSteps} (${progressPercent}%)`;
             }
 
             if (this.bookData) {
@@ -448,11 +448,11 @@ const reader = {
         try {
             // Kitabı IndexedDB'den al
             const book = await booksDb.getBook(bookId);
-            if (!book) throw new Error("Kitap veritabanında bulunamadı.");
+            if (!book) throw new Error("Book not found in database.");
 
             // Eğer kitap dosyası yoksa
             if (!book.file) {
-                alert("Kitap dosyası bulunamadı.");
+                alert("Book file not found.");
                 return;
             }
 
@@ -484,7 +484,7 @@ const reader = {
             const panelBookCoverContainer = document.getElementById('panel-book-cover-container');
             
             if (panelBookTitle) panelBookTitle.textContent = book.title;
-            if (panelBookAuthor) panelBookAuthor.textContent = book.author || "Bilinmeyen Yazar";
+            if (panelBookAuthor) panelBookAuthor.textContent = book.author || "Unknown Author";
             
             if (panelBookCoverContainer) {
                 if (book.coverUrl && !book.coverUrl.startsWith('blob:')) {
@@ -661,8 +661,8 @@ const reader = {
             if (epubViewerEl) epubViewerEl.style.opacity = '1';
             this.isRestoringBook = false;
             this.isRestoringPosition = false;
-            console.error("Kitap açılırken hata:", err);
-            alert("Kitap yüklenemedi.");
+            console.error("Error opening book:", err);
+            alert("Could not load book.");
             this.closeReader();
         }
     },
@@ -945,7 +945,7 @@ const reader = {
                     
                     // Önceki Butonu
                     const prevBtn = doc.createElement('button');
-                    prevBtn.textContent = 'Önceki Bölüm';
+                    prevBtn.textContent = 'Previous Chapter';
                     prevBtn.style.cssText = `
                         flex: 1;
                         padding: 12px;
@@ -965,7 +965,7 @@ const reader = {
                     
                     // Sonraki Butonu
                     const nextBtn = doc.createElement('button');
-                    nextBtn.textContent = 'Sonraki Bölüm';
+                    nextBtn.textContent = 'Next Chapter';
                     nextBtn.style.cssText = `
                         flex: 1;
                         padding: 12px;
@@ -1173,11 +1173,11 @@ const reader = {
                 }
                 this.updateEpubProgressUI(false);
             } else {
-                tocList.innerHTML = '<p class="empty-text">Bu kitapta içindekiler tablosu bulunamadı.</p>';
+                tocList.innerHTML = '<p class="empty-text">No table of contents found in this book.</p>';
                 this.updateEpubProgressUI(false);
             }
         } catch (e) {
-            console.error("İçindekiler yüklenemedi:", e);
+            console.error("Could not load table of contents:", e);
         }
     },
 
@@ -1285,10 +1285,10 @@ const reader = {
 
         // İlerlemeyi güncelle
         const percent = Math.round((this.pdfCurrentPage / this.pdfTotalPages) * 100);
-        this.updateProgressBar(this.pdfCurrentPage, percent, `Sayfa ${this.pdfCurrentPage} / ${this.pdfTotalPages}`);
+        this.updateProgressBar(this.pdfCurrentPage, percent, `Page ${this.pdfCurrentPage} / ${this.pdfTotalPages}`);
         const chIndicator = document.getElementById('panel-chapter-indicator');
         if (chIndicator) {
-            chIndicator.textContent = `Sayfa ${this.pdfCurrentPage} / ${this.pdfTotalPages} (${percent}%)`;
+            chIndicator.textContent = `Page ${this.pdfCurrentPage} / ${this.pdfTotalPages} (${percent}%)`;
         }
 
         // PDF İçindekiler Yükleme
@@ -1391,7 +1391,7 @@ const reader = {
             const formattedPdfWords = (typeof utils !== 'undefined' && utils.formatNumber)
                 ? utils.formatNumber(pdfWordCount)
                 : pdfWordCount;
-            this.setUntranslatableContent(pdfWordBanner, `📖 Bu sayfada ${formattedPdfWords} kelime bulunuyor`, false);
+            this.setUntranslatableContent(pdfWordBanner, `📖 ${formattedPdfWords} words on this page`, false);
 
             // Viewer'ı güncelle
             viewerContainer.innerHTML = '';
@@ -1417,10 +1417,10 @@ const reader = {
             
             // İlerlemeyi güncelle
             const percent = Math.round((this.pdfCurrentPage / this.pdfTotalPages) * 100);
-            this.updateProgressBar(this.pdfCurrentPage, percent, `Sayfa ${this.pdfCurrentPage} / ${this.pdfTotalPages}`);
+            this.updateProgressBar(this.pdfCurrentPage, percent, `Page ${this.pdfCurrentPage} / ${this.pdfTotalPages}`);
             const chIndicator = document.getElementById('panel-chapter-indicator');
             if (chIndicator) {
-                chIndicator.textContent = `Sayfa ${this.pdfCurrentPage} / ${this.pdfTotalPages} (${percent}%)`;
+                chIndicator.textContent = `Page ${this.pdfCurrentPage} / ${this.pdfTotalPages} (${percent}%)`;
             }
             const pdfLocStr = `${this.pdfCurrentPage};${appliedScrollTop}`;
             if (this.bookData) {
@@ -1497,7 +1497,7 @@ const reader = {
                 for (let i = 1; i <= Math.min(this.pdfTotalPages, 100); i += 5) {
                     const div = document.createElement('div');
                     div.className = 'toc-item';
-                    div.textContent = `Sayfa ${i}`;
+                    div.textContent = `Page ${i}`;
                     div.onclick = () => {
                         this.renderPdfPage(i);
                         this.closeTOCPanel();
@@ -1506,7 +1506,7 @@ const reader = {
                 }
             }
         } catch (e) {
-            tocList.innerHTML = '<p class="empty-text">İçindekiler yüklenemedi.</p>';
+            tocList.innerHTML = '<p class="empty-text">Could not load table of contents.</p>';
         }
     },
 
@@ -1858,10 +1858,10 @@ const reader = {
                     : '';
 
                 rowsHtml =
-                    `<div translate="no" class="notranslate" style="margin-bottom: 5px;"><strong>Orijinal:</strong> ${escapeHtml(cleanOriginal)}</div>` +
-                    `<div translate="no" class="notranslate" style="margin-bottom: 5px;"><strong>Olası Türkçe Kelimeler:</strong> ${escapeHtml(possibleListStr)}</div>` +
+                    `<div translate="no" class="notranslate" style="margin-bottom: 5px;"><strong>Original:</strong> ${escapeHtml(cleanOriginal)}</div>` +
+                    `<div translate="no" class="notranslate" style="margin-bottom: 5px;"><strong>Possible Turkish Meanings:</strong> ${escapeHtml(possibleListStr)}</div>` +
                     `<div translate="no" class="notranslate" style="border-top: 1px solid rgba(128,128,128,0.22); padding-top: 5px; margin-top: 2px;">` +
-                        `<strong>Cümledeki Anlamı:</strong> <strong>${escapeHtml(wordAnalysis.contextualWord)}</strong>${posBadge} — ` +
+                        `<strong>Meaning in Context:</strong> <strong>${escapeHtml(wordAnalysis.contextualWord)}</strong>${posBadge} — ` +
                         `<span style="font-weight: 400;">${escapeHtml(wordAnalysis.contextualExplanation)}</span>` +
                     `</div>`;
 
@@ -1877,8 +1877,8 @@ const reader = {
                 loader.style.display = 'none';
 
                 rowsHtml =
-                    `<div translate="no" class="notranslate" style="margin-bottom: 4px;"><strong>Orijinal:</strong> ${escapeHtml(cleanOriginal)}</div>` +
-                    `<div translate="no" class="notranslate"><strong>Türkçe:</strong> ${escapeHtml(translationTR)}</div>`;
+                    `<div translate="no" class="notranslate" style="margin-bottom: 4px;"><strong>Original:</strong> ${escapeHtml(cleanOriginal)}</div>` +
+                    `<div translate="no" class="notranslate"><strong>Turkish:</strong> ${escapeHtml(translationTR)}</div>`;
 
                 finalTrForAttr = translationTR;
             }
@@ -1898,7 +1898,7 @@ const reader = {
             }
         } catch (e) {
             loader.style.display = 'none';
-            this.setUntranslatableContent(translationText, "Çeviri servisi hatası.", false);
+            this.setUntranslatableContent(translationText, "Translation service error.", false);
         }
     },
 
@@ -2013,12 +2013,12 @@ const reader = {
         });
 
         if (success) {
-            alert("Kelime eklendi.");
+            alert("Word saved to dictionary.");
             this.hidePopover();
             // Kelimelerim ekranını yenile
             if (window.app) window.app.loadWords();
         } else {
-            alert("Kelime kaydedilemedi.");
+            alert("Could not save word.");
         }
     },
 
@@ -2854,10 +2854,10 @@ const reader = {
             const span = doc.createElement('span');
             span.setAttribute('translate', 'no');
             span.className = 'notranslate';
-            span.textContent = `📖 Bu sayfada ${formattedCount} kelime bulunuyor`;
+            span.textContent = `📖 ${formattedCount} words on this page`;
             shadow.appendChild(span);
         } catch (e) {
-            banner.textContent = `📖 Bu sayfada ${formattedCount} kelime bulunuyor`;
+            banner.textContent = `📖 ${formattedCount} words on this page`;
         }
 
         body.insertBefore(banner, body.firstChild);
@@ -2870,12 +2870,12 @@ const reader = {
         if (!btn || !label) return;
 
         if (this.settings.smartReformat) {
-            label.textContent = 'Açık';
+            label.textContent = 'On';
             btn.style.borderColor = 'var(--accent-color)';
             btn.style.backgroundColor = 'rgba(99, 102, 241, 0.12)';
             btn.style.color = 'var(--accent-color)';
         } else {
-            label.textContent = 'Kapalı';
+            label.textContent = 'Off';
             btn.style.borderColor = '';
             btn.style.backgroundColor = '';
             btn.style.color = '';
@@ -3647,12 +3647,12 @@ const reader = {
         if (!btn || !label) return;
 
         if (this.settings.fixSpacing) {
-            label.textContent = 'Açık';
+            label.textContent = 'On';
             btn.style.borderColor = 'var(--accent-color)';
             btn.style.backgroundColor = 'rgba(99, 102, 241, 0.12)';
             btn.style.color = 'var(--accent-color)';
         } else {
-            label.textContent = 'Kapalı';
+            label.textContent = 'Off';
             btn.style.borderColor = '';
             btn.style.backgroundColor = '';
             btn.style.color = '';
@@ -4037,7 +4037,7 @@ const reader = {
     // Sesli Kitap Okuma Başlat (TTS)
     async startTTS() {
         if (!('speechSynthesis' in window)) {
-            alert("Sesli okuma desteklenmiyor.");
+            alert("Text-to-speech is not supported on this browser.");
             return;
         }
 
@@ -4087,7 +4087,7 @@ const reader = {
                     const textContent = await page.getTextContent();
                     textToRead = textContent.items.map(item => item.str).join(' ');
                 } catch (e) {
-                    console.error("PDF metni okunamadı:", e);
+                    console.error("Could not read PDF text:", e);
                 }
             }
         }
@@ -4095,7 +4095,7 @@ const reader = {
         textToRead = textToRead.replace(/\s+/g, ' ').trim();
         
         if (!textToRead) {
-            alert("Okunacak metin bulunamadı.");
+            alert("No text found to read.");
             return;
         }
 
@@ -4112,7 +4112,7 @@ const reader = {
 
         const btn = document.getElementById('btn-tts-toggle');
         if (btn) {
-            btn.innerHTML = '<i data-lucide="pause"></i> Duraklat';
+            btn.innerHTML = '<i data-lucide="pause"></i> Pause';
             lucide.createIcons();
         }
 
@@ -4138,7 +4138,7 @@ const reader = {
         }
         const btn = document.getElementById('btn-tts-toggle');
         if (btn) {
-            btn.innerHTML = '<i data-lucide="play"></i> Oku';
+            btn.innerHTML = '<i data-lucide="play"></i> Read';
             lucide.createIcons();
         }
     },
@@ -4148,13 +4148,13 @@ const reader = {
         const isGoogle = nameLower.includes('-x-') || nameLower.includes('google');
         const langCode = voice.lang;
         const isTurkish = langCode.toLowerCase().startsWith('tr');
-        const langLabel = isTurkish ? "Türkçe" : "İngilizce";
+        const langLabel = isTurkish ? "Turkish" : "English";
 
         let genderLabel = "";
         if (nameLower.includes('female') || nameLower.includes('zira') || nameLower.includes('seda') || nameLower.includes('hazel') || nameLower.includes('susan') || nameLower.includes('yelda') || nameLower.includes('f-local') || nameLower.includes('f-network')) {
-            genderLabel = " (Kadın)";
+            genderLabel = " (Female)";
         } else if (nameLower.includes('male') || nameLower.includes('tolga') || nameLower.includes('david') || nameLower.includes('george') || nameLower.includes('cem') || nameLower.includes('m-local') || nameLower.includes('m-network')) {
-            genderLabel = " (Erkek)";
+            genderLabel = " (Male)";
         }
 
         if (isGoogle) {
@@ -4165,12 +4165,12 @@ const reader = {
                 const letter = codePart.charAt(2).toUpperCase();
                 if (!genderLabel) {
                     if (['A', 'C', 'E', 'F', 'G', 'H'].includes(letter)) {
-                        genderLabel = " (Kadın)";
+                        genderLabel = " (Female)";
                     } else if (['B', 'D', 'I', 'J'].includes(letter)) {
-                        genderLabel = " (Erkek)";
+                        genderLabel = " (Male)";
                     }
                 }
-                return `Google ${langLabel} Ses ${letter}${genderLabel}`;
+                return `Google ${langLabel} Voice ${letter}${genderLabel}`;
             }
             
             // Check for single letter voice at the end of Wavenet/Neural2 names, e.g. en-US-Neural2-F
@@ -4179,16 +4179,16 @@ const reader = {
                 const letter = lastPart.toUpperCase();
                 if (!genderLabel) {
                     if (['A', 'C', 'E', 'F', 'G', 'H'].includes(letter)) {
-                        genderLabel = " (Kadın)";
+                        genderLabel = " (Female)";
                     } else if (['B', 'D', 'I', 'J'].includes(letter)) {
-                        genderLabel = " (Erkek)";
+                        genderLabel = " (Male)";
                     }
                 }
-                return `Google ${langLabel} Ses ${letter}${genderLabel}`;
+                return `Google ${langLabel} Voice ${letter}${genderLabel}`;
             }
 
             // Check if there is a generic Google name, e.g. "Google tr-tr"
-            return `Google ${langLabel} Ses${genderLabel}`;
+            return `Google ${langLabel} Voice${genderLabel}`;
         }
 
         // Microsoft Zira, David, Hazel etc.
@@ -4211,7 +4211,7 @@ const reader = {
         const voices = window.speechSynthesis.getVoices();
         
         // Clear all except default option
-        voiceSelect.innerHTML = '<option value="default">Varsayılan Ses (Otomatik)</option>';
+        voiceSelect.innerHTML = '<option value="default">Default Voice (Auto)</option>';
 
         // Filter voices for Turkish (tr) and English (en)
         const relevantVoices = voices.filter(voice => {

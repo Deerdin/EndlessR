@@ -15,7 +15,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <!-- CSS Stylesheet -->
-    <link rel="stylesheet" href="css/styles.css?v=44">
+    <link rel="stylesheet" href="css/styles.css?v=45">
     <script>
         (function() {
             try {
@@ -57,27 +57,27 @@
                 <div class="header-logo"><span class="logo-main">Endless</span><span class="logo-accent">R</span></div>
                 <div class="header-actions" style="display: flex; align-items: center; gap: 8px;">
                     <!-- Ana Sayfa Tema Değiştirme Butonu (Ay / Güneş) -->
-                    <button id="btn-home-theme-toggle" class="icon-btn glass" style="width: 40px; height: 40px; border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); cursor: pointer;" title="Temayı Değiştir">
+                    <button id="btn-home-theme-toggle" class="icon-btn glass" style="width: 40px; height: 40px; border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); cursor: pointer;" title="Switch Theme">
                         <i data-lucide="sun" style="width: 18px; height: 18px;"></i>
                     </button>
                     <!-- Manuel Klasör Oluşturma Butonu -->
-                    <button id="btn-home-create-folder" class="icon-btn glass" style="width: 40px; height: 40px; border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); cursor: pointer;" title="Yeni Klasör Oluştur">
+                    <button id="btn-home-create-folder" class="icon-btn glass" style="width: 40px; height: 40px; border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); cursor: pointer;" title="Create New Folder">
                         <i data-lucide="folder-plus" style="width: 18px; height: 18px;"></i>
                     </button>
                     <!-- Kitap Silme Modu Butonu (Çöp Kutusu) -->
-                    <button id="btn-home-delete-mode" class="icon-btn glass" style="width: 40px; height: 40px; border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); cursor: pointer;" title="Kitap Kaldır">
+                    <button id="btn-home-delete-mode" class="icon-btn glass" style="width: 40px; height: 40px; border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); cursor: pointer;" title="Delete Mode">
                         <i data-lucide="trash-2" style="width: 18px; height: 18px;"></i>
                     </button>
                     <!-- Kitap Yükleme Butonu -->
                     <button id="btn-home-upload-trigger" class="action-outline-btn-sm" style="background: var(--accent-gradient); border: none; color: white; padding: 10px 16px; border-radius: var(--radius-md); font-weight: 600; display: flex; align-items: center; gap: 6px;">
-                        <i data-lucide="plus" style="width: 16px; height: 16px;"></i> Kitap Ekle
+                        <i data-lucide="plus" style="width: 16px; height: 16px;"></i> Add Book
                     </button>
                     <input type="file" id="file-input" accept=".epub,.pdf" style="display: none;">
                 </div>
             </header>
             
             <main class="view-content" style="padding-top: 0;">
-                <span class="section-title">Kitaplarım</span>
+                <span class="section-title">My Books</span>
                 
                 <!-- Kitap Listesi -->
                 <div id="book-grid" class="book-grid" style="margin-top: 12px;">
@@ -87,7 +87,7 @@
                 <!-- Boş Kütüphane Görünümü -->
                 <div id="library-empty" class="empty-state">
                     <i data-lucide="library" class="empty-icon"></i>
-                    <p>Kütüphanen henüz boş. Buradan ilk EPUB veya PDF kitabını yükleyebilirsin!</p>
+                    <p>Your library is empty. Upload your first EPUB or PDF book here!</p>
                 </div>
             </main>
         </section>
@@ -100,21 +100,21 @@
                     <i data-lucide="user"></i>
                 </div>
                 <div class="profile-user-info">
-                    <h2>Kitap Okuyucu</h2>
-                    <p id="profile-stats-text">Yükleniyor...</p>
+                    <h2>Reader</h2>
+                    <p id="profile-stats-text">Loading...</p>
                 </div>
             </div>
 
             <!-- Segment Değiştirici (Sub-navigation) -->
             <div class="profile-segment-bar glass">
                 <button class="segment-btn active" data-segment="profile-books">
-                    <i data-lucide="library" style="width: 14px; height: 14px; margin-right: 4px;"></i>Kitaplık
+                    <i data-lucide="library" style="width: 14px; height: 14px; margin-right: 4px;"></i>Library
                 </button>
                 <button class="segment-btn" data-segment="profile-words">
-                    <i data-lucide="languages" style="width: 14px; height: 14px; margin-right: 4px;"></i>Sözlük
+                    <i data-lucide="languages" style="width: 14px; height: 14px; margin-right: 4px;"></i>Dictionary
                 </button>
                 <button class="segment-btn" data-segment="profile-replacements">
-                    <i data-lucide="edit-3" style="width: 14px; height: 14px; margin-right: 4px;"></i>Değişimler
+                    <i data-lucide="edit-3" style="width: 14px; height: 14px; margin-right: 4px;"></i>Replacements
                 </button>
             </div>
 
@@ -123,7 +123,7 @@
                 <!-- SEGMENT 1: KİTAPLIK (Profil içi kitaplık) -->
                 <div id="profile-books" class="segment-pane active">
                     <div class="segment-header">
-                        <span class="section-title">Kitaplığım</span>
+                        <span class="section-title">My Library</span>
                     </div>
                     
                     <!-- Kitap Listesi -->
@@ -135,7 +135,7 @@
                 <!-- SEGMENT 2: KELİMELERİM (Önizleme) -->
                 <div id="profile-words" class="segment-pane">
                     <div class="segment-header">
-                        <span class="section-title">Son Kaydedilen Kelimeler</span>
+                        <span class="section-title">Recently Saved Words</span>
                     </div>
                     
                     <div id="profile-recent-words-list" class="words-list" style="margin-top: 12px;">
@@ -143,17 +143,17 @@
                     </div>
 
                     <button id="btn-go-to-dictionary" class="action-outline-btn full-width-btn" style="margin-top: 15px;">
-                        Tüm Kelimelerimi Gör
+                        View All Saved Words
                     </button>
                 </div>
 
                 <!-- SEGMENT 3: DEĞİŞTİRİLENLER (Kelime Değişiklikleri Yönetimi) -->
                 <div id="profile-replacements" class="segment-pane">
                     <div class="segment-header">
-                        <span class="section-title">Değiştirilen Kelimeler & Cümleler</span>
+                        <span class="section-title">Replaced Words & Phrases</span>
                     </div>
                     <p class="settings-description" style="margin-top: 6px; margin-bottom: 12px; font-size: 12px; color: var(--text-muted);">
-                        Kitaplarda otomatik olarak değiştirilen tüm kelime ve cümleleri buradan görüntüleyip yönetebilirsiniz.
+                        View and manage all words and phrases that are automatically replaced inside your books.
                     </p>
                     
                     <div id="replacements-list" class="words-list" style="margin-top: 12px;">
@@ -166,7 +166,7 @@
         <!-- 3. Ayarlar Ekranı -->
         <section id="view-settings" class="app-view">
             <header class="view-header">
-                <div class="view-title">Ayarlar</div>
+                <div class="view-title">Settings</div>
             </header>
             
             <main class="view-content" style="padding: 12px 20px 100px; display: flex; flex-direction: column; gap: 16px;">
@@ -177,27 +177,27 @@
                             <i data-lucide="database" style="width: 18px; height: 18px;"></i>
                         </div>
                         <div>
-                            <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Uygulama Veritabanı Özeti</h3>
-                            <span style="font-size: 11px; color: var(--text-muted);">Cihazda kayıtlı tüm verilerinizin anlık durumu</span>
+                            <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Database Overview</h3>
+                            <span style="font-size: 11px; color: var(--text-muted);">Live summary of all data stored on your device</span>
                         </div>
                     </div>
 
                     <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
                         <div style="padding: 10px 12px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 2px;">
-                            <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Kitaplık & İlerleme</span>
-                            <span id="db-stat-books" style="font-size: 15px; font-weight: 700; color: var(--text-primary);">0 Kitap</span>
+                            <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Books & Progress</span>
+                            <span id="db-stat-books" style="font-size: 15px; font-weight: 700; color: var(--text-primary);">0 Books</span>
                         </div>
                         <div style="padding: 10px 12px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 2px;">
-                            <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Klasörler / Seriler</span>
-                            <span id="db-stat-folders" style="font-size: 15px; font-weight: 700; color: var(--text-primary);">0 Klasör</span>
+                            <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Folders / Series</span>
+                            <span id="db-stat-folders" style="font-size: 15px; font-weight: 700; color: var(--text-primary);">0 Folders</span>
                         </div>
                         <div style="padding: 10px 12px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 2px;">
-                            <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Sözlük (Kelimelerim)</span>
-                            <span id="db-stat-words" style="font-size: 15px; font-weight: 700; color: var(--text-primary);">0 Kelime</span>
+                            <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Dictionary</span>
+                            <span id="db-stat-words" style="font-size: 15px; font-weight: 700; color: var(--text-primary);">0 Words</span>
                         </div>
                         <div style="padding: 10px 12px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 2px;">
-                            <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Metin Değişimleri</span>
-                            <span id="db-stat-replacements" style="font-size: 15px; font-weight: 700; color: var(--text-primary);">0 Değişim</span>
+                            <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Text Replacements</span>
+                            <span id="db-stat-replacements" style="font-size: 15px; font-weight: 700; color: var(--text-primary);">0 Replacements</span>
                         </div>
                     </div>
                 </div>
@@ -209,13 +209,13 @@
                             <i data-lucide="hard-drive-download" style="width: 18px; height: 18px;"></i>
                         </div>
                         <div>
-                            <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Verileri Yedekle & Geri Yükle</h3>
-                            <span style="font-size: 11px; color: var(--text-muted);">Kitaplar, ilerlemeler, klasörler, sözlük ve değişimleri yerel dosyaya indirin veya yükleyin</span>
+                            <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Backup & Restore Data</h3>
+                            <span style="font-size: 11px; color: var(--text-muted);">Export or restore books, progress, folders, dictionary, and replacements</span>
                         </div>
                     </div>
 
                     <div id="backup-status-box" style="display: none; padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; background: rgba(99, 102, 241, 0.12); color: var(--accent-color); border: 1px solid rgba(99, 102, 241, 0.3);">
-                        <div id="backup-status-text" style="margin-bottom: 6px;">İşlem yapılıyor...</div>
+                        <div id="backup-status-text" style="margin-bottom: 6px;">Processing...</div>
                         <div style="width: 100%; height: 6px; background: rgba(128, 128, 128, 0.2); border-radius: 999px; overflow: hidden;">
                             <div id="backup-progress-bar" style="width: 0%; height: 100%; background: var(--accent-color); transition: width 0.2s ease;"></div>
                         </div>
@@ -223,14 +223,14 @@
 
                     <button id="btn-export-full-backup" class="action-btn" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; font-size: 13px; font-weight: 600;">
                         <i data-lucide="download" style="width: 16px; height: 16px;"></i>
-                        <span>Veritabanı Yedeğini İndir (Kitaplar + Tüm Veriler)</span>
+                        <span>Download Full Backup (Books + All Data)</span>
                     </button>
 
                     <div style="height: 1px; background: var(--border-color); margin: 2px 0;"></div>
 
                     <button id="btn-import-backup" class="action-outline-btn" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; font-size: 13px; font-weight: 600; border-color: var(--accent-color); color: var(--accent-color); background: rgba(99, 102, 241, 0.06);">
                         <i data-lucide="upload" style="width: 16px; height: 16px;"></i>
-                        <span>Yedek Dosyası Yükle / Geri Yükle (.json)</span>
+                        <span>Upload / Restore Backup File (.json)</span>
                     </button>
                     <input type="file" id="input-import-backup" accept=".json,.endlessr,application/json" style="display: none;">
                 </div>
@@ -240,16 +240,16 @@
         <!-- 2. Kelimelerim Ekranı (Detaylı Sözlük) -->
         <section id="view-words" class="app-view">
             <header class="view-header">
-                <div class="view-title">Kelimelerim</div>
+                <div class="view-title">My Dictionary</div>
             </header>
             
             <!-- Arama Çubuğu -->
             <div class="search-bar-container" style="padding: 0 20px 10px; display: flex; gap: 10px; align-items: center;">
                 <div class="search-bar glass" style="flex: 1;">
                     <i data-lucide="search"></i>
-                    <input type="text" id="search-words" placeholder="Kelime ara...">
+                    <input type="text" id="search-words" placeholder="Search words...">
                 </div>
-                <button id="btn-add-word-manual" class="icon-btn glass" style="width: 44px; height: 44px; border-radius: var(--radius-md); background: var(--accent-gradient); color: white; border: none;" title="Yeni Kelime Ekle">
+                <button id="btn-add-word-manual" class="icon-btn glass" style="width: 44px; height: 44px; border-radius: var(--radius-md); background: var(--accent-gradient); color: white; border: none;" title="Add New Word">
                     <i data-lucide="plus"></i>
                 </button>
             </div>
@@ -262,7 +262,7 @@
                 <!-- Boş Sözlük Görünümü -->
                 <div id="words-empty" class="empty-state">
                     <i data-lucide="languages" class="empty-icon"></i>
-                    <p>Okuma yaparken bilmediğin kelimelerin üzerine basarak veya arama çubuğunun yanındaki "+" butonu ile manuel olarak buraya ekleme yapabilirsin.</p>
+                    <p>Long-press any word while reading to save it, or tap the "+" button next to the search bar to add words manually.</p>
                 </div>
             </main>
         </section>
@@ -271,27 +271,27 @@
         <div id="add-word-modal" class="modal-overlay" style="display: none;">
             <div class="modal-content glass">
                 <div class="modal-header">
-                    <h3>Sözlüğe Kelime Ekle</h3>
+                    <h3>Add Word to Dictionary</h3>
                     <button id="btn-close-word-modal" class="icon-btn">
                         <i data-lucide="x"></i>
                     </button>
                 </div>
                 <div class="modal-body">
                     <div class="input-group">
-                        <label for="manual-word">Kelime (Yabancı)</label>
-                        <input type="text" id="manual-word" placeholder="Kelime veya Cümle girin...">
+                        <label for="manual-word">Word / Phrase</label>
+                        <input type="text" id="manual-word" placeholder="Enter word or phrase...">
                     </div>
                     <div class="input-group" style="margin-top: 15px;">
-                        <label for="manual-meaning">Türkçe Karşılığı</label>
-                        <input type="text" id="manual-meaning" placeholder="Anlamı girin...">
+                        <label for="manual-meaning">Meaning / Translation</label>
+                        <input type="text" id="manual-meaning" placeholder="Enter meaning...">
                     </div>
                     <div class="input-group" style="margin-top: 15px;">
-                        <label for="manual-context">Cümle İçinde Kullanımı (İsteğe Bağlı)</label>
-                        <textarea id="manual-context" rows="3" placeholder="Örnek kullanım cümlesi..."></textarea>
+                        <label for="manual-context">Example Sentence (Optional)</label>
+                        <textarea id="manual-context" rows="3" placeholder="Example sentence in context..."></textarea>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button id="btn-save-manual-word" class="action-btn">Kaydet</button>
+                    <button id="btn-save-manual-word" class="action-btn">Save</button>
                 </div>
             </div>
         </div>
@@ -300,26 +300,26 @@
         <div id="replace-modal-overlay" class="modal-overlay" style="display: none;">
             <div class="modal-content glass">
                 <div class="modal-header">
-                    <h3>Metni Değiştir</h3>
+                    <h3>Replace Text</h3>
                     <button id="btn-close-replace-modal" class="icon-btn">
                         <i data-lucide="x"></i>
                     </button>
                 </div>
                 <div class="modal-body">
                     <p class="modal-desc" style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">
-                        Seçilen metin bu kitapta otomatik olarak belirttiğiniz yeni metinle değiştirilecektir.
+                        The selected text will be automatically replaced with your new text throughout this book.
                     </p>
                     <div class="input-group">
-                        <label for="replace-original-input">Orijinal Metin</label>
+                        <label for="replace-original-input">Original Text</label>
                         <input type="text" id="replace-original-input" readonly style="background: rgba(0,0,0,0.05); border: 1px solid var(--border-color); color: var(--text-secondary);">
                     </div>
                     <div class="input-group" style="margin-top: 12px;">
-                        <label for="replace-new-input">Yeni Metin</label>
-                        <input type="text" id="replace-new-input" placeholder="Yeni kelime veya cümleyi yazın...">
+                        <label for="replace-new-input">Replacement Text</label>
+                        <input type="text" id="replace-new-input" placeholder="Enter new word or phrase...">
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button id="btn-save-replacement" class="action-btn">Değiştir ve Kaydet</button>
+                    <button id="btn-save-replacement" class="action-btn">Replace & Save</button>
                 </div>
             </div>
         </div>
@@ -331,49 +331,49 @@
         <div id="edit-book-modal" class="modal-overlay" style="display: none;">
             <div class="modal-content glass">
                 <div class="modal-header">
-                    <h3 id="edit-book-modal-heading">Kitap Bilgilerini Düzenle</h3>
+                    <h3 id="edit-book-modal-heading">Edit Book Details</h3>
                     <button id="btn-close-edit-book-modal" class="icon-btn">
                         <i data-lucide="x"></i>
                     </button>
                 </div>
                 <div class="modal-body">
                     <p id="edit-book-modal-desc" class="modal-desc" style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px; line-height: 1.4;">
-                        Aynı yazar ve aynı başlığa sahip kitaplar ana sayfada otomatik olarak tek bir klasör içinde ciltler halinde gruplanır.
+                        Books with the same series title and author are automatically grouped into a folder as volumes.
                     </p>
                     <!-- Kitap Kapak Fotoğrafı Değiştirme Alanı -->
                     <div style="display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); margin-bottom: 6px;">
-                        <img id="edit-book-cover-preview" src="" alt="Kapak" style="width: 48px; height: 68px; object-fit: cover; border-radius: 6px; flex-shrink: 0; border: 1px solid var(--border-color); background: var(--bg-surface-solid);">
+                        <img id="edit-book-cover-preview" src="" alt="Cover" style="width: 48px; height: 68px; object-fit: cover; border-radius: 6px; flex-shrink: 0; border: 1px solid var(--border-color); background: var(--bg-surface-solid);">
                         <div style="display: flex; flex-direction: column; gap: 6px; flex: 1;">
-                            <span style="font-size: 12px; font-weight: 600; color: var(--text-primary);">Kitap Kapak Fotoğrafı</span>
+                            <span style="font-size: 12px; font-weight: 600; color: var(--text-primary);">Book Cover Image</span>
                             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                                 <button type="button" id="btn-change-book-cover" class="action-outline-btn-sm" style="padding: 6px 10px; font-size: 11px; display: flex; align-items: center; gap: 5px; border-color: var(--accent-color); color: var(--accent-color);">
-                                    <i data-lucide="image" style="width: 13px; height: 13px;"></i> Resmi Değiştir
+                                    <i data-lucide="image" style="width: 13px; height: 13px;"></i> Change Cover
                                 </button>
                                 <button type="button" id="btn-reset-book-cover" class="action-outline-btn-sm" style="padding: 6px 10px; font-size: 11px;">
-                                    Varsayılana Dön
+                                    Reset Default
                                 </button>
                             </div>
                         </div>
                     </div>
                     <div class="input-group">
-                        <label for="edit-book-title-input">Kitap / Seri Başlığı</label>
-                        <input type="text" id="edit-book-title-input" placeholder="Kitap veya seri adını girin...">
+                        <label for="edit-book-title-input">Book / Series Title</label>
+                        <input type="text" id="edit-book-title-input" placeholder="Enter book or series title...">
                     </div>
                     <div class="input-group" style="margin-top: 10px;">
-                        <label for="edit-book-author-input">Yazar Adı</label>
-                        <input type="text" id="edit-book-author-input" placeholder="Yazar adını girin...">
+                        <label for="edit-book-author-input">Author Name</label>
+                        <input type="text" id="edit-book-author-input" placeholder="Enter author name...">
                     </div>
                     <div class="input-group" id="edit-book-volume-group" style="margin-top: 10px;">
-                        <label for="edit-book-volume-input">Cilt / Sıra Etiketi (İsteğe Bağlı)</label>
-                        <input type="text" id="edit-book-volume-input" placeholder="Örn: 1. Cilt, Cilt 2, Vol. 3...">
+                        <label for="edit-book-volume-input">Volume / Order Label (Optional)</label>
+                        <input type="text" id="edit-book-volume-input" placeholder="e.g. Vol. 1, Volume 2, Book 3...">
                     </div>
                     <div id="edit-book-quick-series-wrap" style="margin-top: 10px; display: none;">
-                        <span style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Mevcut Klasöre Dahil Et:</span>
+                        <span style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Add to Existing Folder:</span>
                         <div id="edit-book-quick-series-list" class="quick-series-chips"></div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button id="btn-save-book-edit" class="action-btn">Kaydet</button>
+                    <button id="btn-save-book-edit" class="action-btn">Save</button>
                 </div>
             </div>
         </div>
@@ -382,40 +382,40 @@
         <div id="create-folder-modal" class="modal-overlay" style="display: none;">
             <div class="modal-content glass" style="max-width: 420px; max-height: 86vh; display: flex; flex-direction: column;">
                 <div class="modal-header">
-                    <h3>Yeni Klasör Oluştur</h3>
+                    <h3>Create New Folder</h3>
                     <button id="btn-close-create-folder-modal" class="icon-btn">
                         <i data-lucide="x"></i>
                     </button>
                 </div>
                 <div class="modal-body" style="overflow-y: auto; flex: 1; padding-right: 2px;">
                     <div style="display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); margin-bottom: 8px;">
-                        <img id="create-folder-cover-preview" src="" alt="Klasör Kapağı" style="width: 42px; height: 60px; object-fit: cover; border-radius: 6px; flex-shrink: 0; border: 1px solid var(--border-color); background: var(--bg-surface-solid);">
+                        <img id="create-folder-cover-preview" src="" alt="Folder Cover" style="width: 42px; height: 60px; object-fit: cover; border-radius: 6px; flex-shrink: 0; border: 1px solid var(--border-color); background: var(--bg-surface-solid);">
                         <div style="display: flex; flex-direction: column; gap: 5px; flex: 1;">
-                            <span style="font-size: 12px; font-weight: 600; color: var(--text-primary);">Klasör Kapak Resmi (İsteğe Bağlı)</span>
+                            <span style="font-size: 12px; font-weight: 600; color: var(--text-primary);">Folder Cover Image (Optional)</span>
                             <div style="display: flex; gap: 6px;">
                                 <button type="button" id="btn-pick-create-folder-cover" class="action-outline-btn-sm" style="padding: 5px 10px; font-size: 11px; display: flex; align-items: center; gap: 5px; border-color: var(--accent-color); color: var(--accent-color);">
-                                    <i data-lucide="image" style="width: 13px; height: 13px;"></i> Klasör Resmi Seç
+                                    <i data-lucide="image" style="width: 13px; height: 13px;"></i> Choose Image
                                 </button>
                             </div>
                         </div>
                     </div>
                     <div class="input-group">
-                        <label for="create-folder-title-input">Klasör / Seri Adı</label>
-                        <input type="text" id="create-folder-title-input" placeholder="Örn: Overlord, Solo Leveling...">
+                        <label for="create-folder-title-input">Folder / Series Name</label>
+                        <input type="text" id="create-folder-title-input" placeholder="e.g. Overlord, Solo Leveling...">
                     </div>
                     <div class="input-group" style="margin-top: 8px;">
-                        <label for="create-folder-author-input">Yazar Adı (İsteğe Bağlı)</label>
-                        <input type="text" id="create-folder-author-input" placeholder="Yazar adını girin...">
+                        <label for="create-folder-author-input">Author Name (Optional)</label>
+                        <input type="text" id="create-folder-author-input" placeholder="Enter author name...">
                     </div>
                     <div class="input-group" style="margin-top: 10px;">
-                        <label>Klasöre Eklenecek Kitapları Seçin</label>
+                        <label>Select Books to Include</label>
                         <div id="create-folder-books-list" class="folder-manage-list" style="max-height: 240px; overflow-y: auto;">
                             <!-- Kitaplar yatay seçim satırları olarak listelenir -->
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button id="btn-save-create-folder" class="action-btn">Klasörü Oluştur</button>
+                    <button id="btn-save-create-folder" class="action-btn">Create Folder</button>
                 </div>
             </div>
         </div>
@@ -424,21 +424,21 @@
         <div id="folder-view-modal" class="folder-modal-overlay" style="display: none;">
             <div class="folder-modal-sheet glass">
                 <header class="folder-modal-header">
-                    <button id="btn-close-folder-modal" class="icon-btn" title="Geri Dön">
+                    <button id="btn-close-folder-modal" class="icon-btn" title="Back">
                         <i data-lucide="arrow-left"></i>
                     </button>
                     <div class="folder-modal-title-wrap">
                         <div class="folder-modal-title-row">
                             <i data-lucide="folder-open" class="folder-modal-icon"></i>
-                            <h3 id="folder-modal-title">Seri Adı</h3>
+                            <h3 id="folder-modal-title">Series Title</h3>
                         </div>
-                        <span id="folder-modal-subtitle">Yazar • 0 Cilt</span>
+                        <span id="folder-modal-subtitle">Author • 0 Volumes</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 6px;">
-                        <button id="btn-toggle-folder-bookshelf" class="icon-btn glass" style="width: 38px; height: 38px; border-radius: var(--radius-md); border: 1px solid var(--border-color);" title="Klasörü Bir Bütün Olarak Kitaplığa Ekle / Çıkar">
+                        <button id="btn-toggle-folder-bookshelf" class="icon-btn glass" style="width: 38px; height: 38px; border-radius: var(--radius-md); border: 1px solid var(--border-color);" title="Add / Remove Whole Folder from Library">
                             <i data-lucide="star" style="width: 16px; height: 16px;"></i>
                         </button>
-                        <button id="btn-edit-folder-meta" class="icon-btn glass" style="width: 38px; height: 38px; border-radius: var(--radius-md); border: 1px solid var(--border-color);" title="Klasörü ve Kitapları Düzenle">
+                        <button id="btn-edit-folder-meta" class="icon-btn glass" style="width: 38px; height: 38px; border-radius: var(--radius-md); border: 1px solid var(--border-color);" title="Edit Folder & Books">
                             <i data-lucide="edit-2" style="width: 16px; height: 16px;"></i>
                         </button>
                     </div>
@@ -446,19 +446,19 @@
                 <!-- Klasör İçeriği İstatistikleri (Cilt, Bölüm, Sayfa, Kelime) -->
                 <div id="folder-stats-bar" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--border-color); background: rgba(128,128,128,0.04);">
                     <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color);">
-                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">CİLT</span>
+                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">VOLUMES</span>
                         <span id="folder-stat-volumes" style="font-size: 13px; font-weight: 700; color: var(--text-primary);">0</span>
                     </div>
                     <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color);">
-                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">BÖLÜM</span>
+                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">CHAPTERS</span>
                         <span id="folder-stat-chapters" style="font-size: 13px; font-weight: 700; color: var(--text-primary);">0</span>
                     </div>
                     <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color);">
-                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SAYFA</span>
+                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">PAGES</span>
                         <span id="folder-stat-pages" style="font-size: 13px; font-weight: 700; color: var(--text-primary);">0</span>
                     </div>
                     <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color);">
-                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">KELİME</span>
+                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">WORDS</span>
                         <span id="folder-stat-words" style="font-size: 13px; font-weight: 700; color: var(--accent-color);">0</span>
                     </div>
                 </div>
@@ -474,7 +474,7 @@
         <div id="folder-manage-modal" class="modal-overlay" style="display: none; z-index: 220;">
             <div class="modal-content glass folder-manage-modal-content">
                 <div class="modal-header">
-                    <h3>Klasörü ve Kitapları Düzenle</h3>
+                    <h3>Edit Folder & Books</h3>
                     <button id="btn-close-folder-manage-modal" class="icon-btn">
                         <i data-lucide="x"></i>
                     </button>
@@ -483,37 +483,37 @@
                     <!-- Klasör Başlığı, Yazar ve Kapak Resmi Alanı -->
                     <div class="folder-meta-edit-box glass">
                         <div style="display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); margin-bottom: 10px;">
-                            <img id="manage-folder-cover-preview" src="" alt="Klasör Kapağı" style="width: 46px; height: 66px; object-fit: cover; border-radius: 6px; flex-shrink: 0; border: 1px solid var(--border-color); background: var(--bg-surface-solid);">
+                            <img id="manage-folder-cover-preview" src="" alt="Folder Cover" style="width: 46px; height: 66px; object-fit: cover; border-radius: 6px; flex-shrink: 0; border: 1px solid var(--border-color); background: var(--bg-surface-solid);">
                             <div style="display: flex; flex-direction: column; gap: 6px; flex: 1;">
-                                <span style="font-size: 12px; font-weight: 600; color: var(--text-primary);">Klasör Kapak Fotoğrafı</span>
+                                <span style="font-size: 12px; font-weight: 600; color: var(--text-primary);">Folder Cover Image</span>
                                 <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                                     <button type="button" id="btn-change-folder-cover" class="action-outline-btn-sm" style="padding: 5px 10px; font-size: 11px; display: flex; align-items: center; gap: 5px; border-color: var(--accent-color); color: var(--accent-color);">
-                                        <i data-lucide="image" style="width: 13px; height: 13px;"></i> Klasör Resmini Değiştir
+                                        <i data-lucide="image" style="width: 13px; height: 13px;"></i> Change Cover
                                     </button>
                                     <button type="button" id="btn-reset-folder-cover" class="action-outline-btn-sm" style="padding: 5px 10px; font-size: 11px;">
-                                        Varsayılana Dön
+                                        Reset Default
                                     </button>
                                 </div>
                             </div>
                         </div>
                         <div class="folder-meta-inputs">
                             <div class="input-group">
-                                <label for="manage-folder-title-input">Klasör Başlığı</label>
-                                <input type="text" id="manage-folder-title-input" placeholder="Klasör adı...">
+                                <label for="manage-folder-title-input">Folder Title</label>
+                                <input type="text" id="manage-folder-title-input" placeholder="Folder title...">
                             </div>
                             <div class="input-group">
-                                <label for="manage-folder-author-input">Klasör Yazarı</label>
-                                <input type="text" id="manage-folder-author-input" placeholder="Yazar adı...">
+                                <label for="manage-folder-author-input">Folder Author</label>
+                                <input type="text" id="manage-folder-author-input" placeholder="Author name...">
                             </div>
                         </div>
                         <button id="btn-save-folder-meta" class="action-btn" style="padding: 10px; font-size: 13px; margin-top: 8px;">
-                            Klasör Bilgilerini Kaydet
+                            Save Folder Info
                         </button>
                     </div>
 
                     <!-- Klasördeki Kitaplar (Yatay Barlar) -->
                     <div class="folder-manage-section">
-                        <span class="folder-manage-section-title">Klasördeki Kitaplar</span>
+                        <span class="folder-manage-section-title">Books in Folder</span>
                         <div id="folder-manage-books-list" class="folder-manage-list">
                             <!-- Klasördeki kitaplar yatay bar olarak burada listelenir -->
                         </div>
@@ -521,7 +521,7 @@
 
                     <!-- Klasöre Dışarıdan Kitap Ekleme Bölümü -->
                     <div id="folder-manage-add-section" class="folder-manage-section" style="display: none;">
-                        <span class="folder-manage-section-title">Kütüphaneden Bu Klasöre Kitap Ekle</span>
+                        <span class="folder-manage-section-title">Add Books from Library</span>
                         <div id="folder-manage-available-list" class="folder-manage-list">
                             <!-- Klasör dışındaki kitaplar yatay bar olarak burada listelenir -->
                         </div>
@@ -537,12 +537,12 @@
                 <button id="btn-reader-back" class="icon-btn">
                     <i data-lucide="arrow-left"></i>
                 </button>
-                <div id="reader-book-title" class="reader-title">Kitap Yükleniyor...</div>
+                <div id="reader-book-title" class="reader-title">Loading Book...</div>
                 <div class="reader-actions" style="visibility: hidden; pointer-events: none;">
-                    <button id="btn-reader-toc" class="icon-btn" data-tooltip="İçindekiler">
+                    <button id="btn-reader-toc" class="icon-btn" data-tooltip="Table of Contents">
                         <i data-lucide="menu"></i>
                     </button>
-                    <button id="btn-reader-style" class="icon-btn" data-tooltip="Görünüm Ayarları">
+                    <button id="btn-reader-style" class="icon-btn" data-tooltip="Display Settings">
                         <i data-lucide="type"></i>
                     </button>
                 </div>
@@ -560,7 +560,7 @@
 
                 <!-- PDF Sayfa Kontrolcüsü (Yalnızca PDF modunda görünür) -->
                 <div id="pdf-page-indicator" class="pdf-indicator glass" style="display: none;">
-                    Sayfa: <span id="pdf-current-page">1</span> / <span id="pdf-total-pages">1</span>
+                    Page: <span id="pdf-current-page">1</span> / <span id="pdf-total-pages">1</span>
                 </div>
             </main>
 
@@ -573,14 +573,14 @@
             </button>
 
             <!-- Yüzen Okuyucu Ayar Butonu (FAB) -->
-            <button id="btn-reader-panel-trigger" class="floating-fab glass" title="Okuma Ayarları" style="display: none;">
+            <button id="btn-reader-panel-trigger" class="floating-fab glass" title="Reader Settings" style="display: none;">
                 <i data-lucide="sliders"></i>
             </button>
 
             <!-- İçindekiler Paneli (Yan Panel) -->
             <div id="toc-panel" class="side-panel glass">
                 <div class="panel-header">
-                    <h3>İçindekiler</h3>
+                    <h3>Table of Contents</h3>
                     <button id="btn-close-toc" class="icon-btn">
                         <i data-lucide="x"></i>
                     </button>
@@ -605,13 +605,13 @@
                         <div class="style-row" style="border-bottom: none; padding-bottom: 0;">
                             <div class="nav-row-buttons" style="width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
                                 <button id="btn-panel-prev" class="action-outline-btn-sm" style="padding: 8px 14px; min-width: 70px;">
-                                    <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i> Geri
+                                    <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i> Prev
                                 </button>
                                 <div id="panel-chapter-indicator" style="font-size: 13px; font-weight: 600; color: var(--text-primary); text-align: center;">
-                                    Bölüm Yükleniyor...
+                                    Loading Chapter...
                                 </div>
                                 <button id="btn-panel-next" class="action-outline-btn-sm" style="padding: 8px 14px; min-width: 70px;">
-                                    İleri <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
+                                    Next <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
                                 </button>
                             </div>
                         </div>
@@ -621,7 +621,7 @@
                             <!-- Left: Contents Button -->
                             <button id="btn-panel-toc" class="action-outline-btn glass" style="flex: 1; height: 74px; display: flex; flex-direction: column; gap: 6px; justify-content: center; align-items: center; border-radius: var(--radius-md);">
                                 <i data-lucide="menu" style="width: 20px; height: 20px;"></i>
-                                <span style="font-size: 12px; font-weight: 600;">İçindekiler</span>
+                                <span style="font-size: 12px; font-weight: 600;">Contents</span>
                             </button>
                             
                             <!-- Right: Book Cover & Metadata Card -->
@@ -630,8 +630,8 @@
                                     <!-- Cover image dynamic -->
                                 </div>
                                 <div style="display: flex; flex-direction: column; gap: 2px; overflow: hidden; text-align: left;">
-                                    <span id="panel-book-title" style="font-size: 11px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; max-width: 110px;">Kitap Adı</span>
-                                    <span id="panel-book-author" style="font-size: 9px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; max-width: 110px;">Yazar</span>
+                                    <span id="panel-book-title" style="font-size: 11px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; max-width: 110px;">Book Title</span>
+                                    <span id="panel-book-author" style="font-size: 9px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; max-width: 110px;">Author</span>
                                 </div>
                             </div>
                         </div>
@@ -639,10 +639,10 @@
                         <!-- Actions Row -->
                         <div style="display: flex; gap: 12px; margin-top: 12px; width: 100%;">
                             <button id="btn-panel-delete-book" class="action-outline-btn-sm" style="flex: 1; padding: 10px; border-color: rgba(239, 68, 68, 0.4); color: #ef4444; border-radius: var(--radius-md); font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;">
-                                <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> Kitabı Sil
+                                <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> Delete Book
                             </button>
                             <button id="btn-panel-close-reader" class="action-outline-btn-sm" style="flex: 1; padding: 10px; border-radius: var(--radius-md); font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;">
-                                <i data-lucide="log-out" style="width: 14px; height: 14px;"></i> Kapat
+                                <i data-lucide="log-out" style="width: 14px; height: 14px;"></i> Close
                             </button>
                         </div>
 
@@ -652,7 +652,7 @@
                                 <input type="range" id="reader-progress-slider" min="0" max="100" value="0">
                                 <div class="progress-details" style="margin-top: 4px;">
                                     <span id="reader-progress-percent">0%</span>
-                                    <span id="reader-progress-label">Bölüm İlerlemesi</span>
+                                    <span id="reader-progress-label">Chapter Progress</span>
                                 </div>
                             </div>
                         </div>
@@ -662,9 +662,9 @@
                     <div id="tab-pane-display" class="tab-pane" style="gap: 10px;">
                         <!-- Yazı Tipi -->
                         <div class="style-row vertical-row" style="gap: 6px; margin-bottom: 0;">
-                            <span style="font-size: 12px; color: var(--text-muted);">Yazı Tipi</span>
+                            <span style="font-size: 12px; color: var(--text-muted);">Font Family</span>
                             <div class="font-family-options">
-                                <button class="font-family-btn active" data-font="system-ui" style="padding: 7px 4px;">Sistem</button>
+                                <button class="font-family-btn active" data-font="system-ui" style="padding: 7px 4px;">System</button>
                                 <button class="font-family-btn" data-font="Lora, serif" style="padding: 7px 4px;">Lora</button>
                                 <button class="font-family-btn" data-font="Inter, sans-serif" style="padding: 7px 4px;">Inter</button>
                                 <button class="font-family-btn" data-font="Outfit, sans-serif" style="padding: 7px 4px;">Outfit</button>
@@ -675,7 +675,7 @@
                         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%;">
                             <!-- Yazı Boyutu -->
                             <div style="display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 7px 4px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: rgba(128,128,128,0.04);">
-                                <span style="font-size: 11px; font-weight: 600; color: var(--text-muted);">Yazı Boyutu</span>
+                                <span style="font-size: 11px; font-weight: 600; color: var(--text-muted);">Font Size</span>
                                 <div class="font-size-adjust" style="display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0 2px; gap: 2px;">
                                     <button id="btn-font-dec" class="circle-btn" style="width: 26px; height: 26px; font-size: 14px;">-</button>
                                     <span id="font-size-val" style="font-size: 12px; font-weight: 700; min-width: 34px; text-align: center;">100%</span>
@@ -684,7 +684,7 @@
                             </div>
                             <!-- Satır Aralığı -->
                             <div style="display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 7px 4px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: rgba(128,128,128,0.04);">
-                                <span style="font-size: 11px; font-weight: 600; color: var(--text-muted);">Satır Aralığı</span>
+                                <span style="font-size: 11px; font-weight: 600; color: var(--text-muted);">Line Height</span>
                                 <div class="line-height-adjust" style="display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0 2px; gap: 2px;">
                                     <button id="btn-lineheight-dec" class="circle-btn" style="width: 26px; height: 26px; font-size: 14px;">-</button>
                                     <span id="lineheight-val" style="font-size: 12px; font-weight: 700; min-width: 30px; text-align: center;">1.6</span>
@@ -693,7 +693,7 @@
                             </div>
                             <!-- Kenar Boşluğu -->
                             <div style="display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 7px 4px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: rgba(128,128,128,0.04);">
-                                <span style="font-size: 11px; font-weight: 600; color: var(--text-muted);">Kenar Boşluğu</span>
+                                <span style="font-size: 11px; font-weight: 600; color: var(--text-muted);">Margins</span>
                                 <div class="padding-adjust" style="display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0 2px; gap: 2px;">
                                     <button id="btn-padding-dec" class="circle-btn" style="width: 26px; height: 26px; font-size: 14px;">-</button>
                                     <span id="padding-val" style="font-size: 12px; font-weight: 700; min-width: 30px; text-align: center;">8px</span>
@@ -707,16 +707,16 @@
                             <button id="btn-fix-spacing" class="action-outline-btn-sm" style="padding: 8px 10px; border-radius: var(--radius-sm); font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%;">
                                 <span style="display: flex; align-items: center; gap: 5px; font-size: 12px;">
                                     <i data-lucide="align-left" style="width: 14px; height: 14px; flex-shrink: 0;"></i>
-                                    <span>Boşluk Düzelt</span>
+                                    <span>Fix Spacing</span>
                                 </span>
-                                <span id="fix-spacing-label" style="font-size: 11px; opacity: 0.85;">Kapalı</span>
+                                <span id="fix-spacing-label" style="font-size: 11px; opacity: 0.85;">Off</span>
                             </button>
                             <button id="btn-smart-reformat" class="action-outline-btn-sm" style="padding: 8px 10px; border-radius: var(--radius-sm); font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%;">
                                 <span style="display: flex; align-items: center; gap: 5px; font-size: 12px;">
                                     <i data-lucide="sparkles" style="width: 14px; height: 14px; flex-shrink: 0;"></i>
-                                    <span>Biçimlendirme</span>
+                                    <span>Smart Format</span>
                                 </span>
-                                <span id="smart-reformat-label" style="font-size: 11px; opacity: 0.85;">Kapalı</span>
+                                <span id="smart-reformat-label" style="font-size: 11px; opacity: 0.85;">Off</span>
                             </button>
                         </div>
                     </div>
@@ -724,12 +724,12 @@
                     <!-- 3. SEKME: SES (Speech) -->
                     <div id="tab-pane-speech" class="tab-pane">
                         <div class="style-row vertical-row">
-                            <span>Sesli Kitap Okuma (TTS)</span>
+                            <span>Text-to-Speech (TTS)</span>
                             <div class="tts-controls" style="margin-top: 6px;">
-                                <button id="btn-tts-toggle" class="action-outline-btn"><i data-lucide="play"></i> Oku</button>
-                                <button id="btn-tts-stop" class="action-outline-btn"><i data-lucide="square"></i> Durdur</button>
+                                <button id="btn-tts-toggle" class="action-outline-btn"><i data-lucide="play"></i> Read</button>
+                                <button id="btn-tts-stop" class="action-outline-btn"><i data-lucide="square"></i> Stop</button>
                                 <div class="tts-speed-selector">
-                                    <span>Hız:</span>
+                                    <span>Speed:</span>
                                     <select id="tts-speed-select" class="glass-select-sm">
                                         <option value="0.8">0.8x</option>
                                         <option value="1.0" selected>1.0x</option>
@@ -739,9 +739,9 @@
                                 </div>
                             </div>
                             <div class="tts-voice-row" style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 10px; box-sizing: border-box;">
-                                <span style="font-size: 13px; font-weight: 500;">Ses Tonu:</span>
+                                <span style="font-size: 13px; font-weight: 500;">Voice:</span>
                                 <select id="tts-voice-select" class="glass-select-sm" style="flex: 1; max-width: 180px;">
-                                    <option value="default">Varsayılan Ses</option>
+                                    <option value="default">Default Voice</option>
                                 </select>
                             </div>
                         </div>
@@ -816,29 +816,29 @@
                 <div class="panel-tabs-navbar">
                     <button class="panel-tab-btn" data-tab="tab-pane-read">
                         <i data-lucide="book-open"></i>
-                        <span>Bölüm</span>
+                        <span>Chapter</span>
                     </button>
                     <button class="panel-tab-btn" data-tab="tab-pane-display">
                         <i data-lucide="type"></i>
-                        <span>Görünüm</span>
+                        <span>Display</span>
                     </button>
                     <button class="panel-tab-btn" data-tab="tab-pane-speech">
                         <i data-lucide="volume-2"></i>
-                        <span>Ses</span>
+                        <span>Speech</span>
                     </button>
                     <button class="panel-tab-btn" data-tab="tab-pane-settings">
                         <i data-lucide="settings"></i>
-                        <span>Ayarlar</span>
+                        <span>Settings</span>
                     </button>
                 </div>
             </div>
         </section>
 
         <!-- ================= METİN SEÇİM POPOVER'I (ÇEVİRİ PANELİ) ================= -->
-        <div id="translate-popover" class="translate-popover glass notranslate" translate="no" lang="tr" style="display: none;">
+        <div id="translate-popover" class="translate-popover glass notranslate" translate="no" lang="en" style="display: none;">
             <div class="popover-arrow"></div>
             <div class="popover-header notranslate" translate="no">
-                <span class="selected-text-preview notranslate" id="selected-text-preview" translate="no">Seçili Metin</span>
+                <span class="selected-text-preview notranslate" id="selected-text-preview" translate="no">Selected Text</span>
                 <button id="btn-close-popover" class="close-popover-btn" translate="no">
                     <i data-lucide="x"></i>
                 </button>
@@ -848,7 +848,7 @@
                 <!-- Çeviri Sonucu -->
                 <div id="translation-result" class="translation-result notranslate" translate="no">
                     <div class="loader-spinner notranslate" id="translation-loader" translate="no">
-                        <i data-lucide="loader-2" class="spin-icon"></i> Çevriliyor...
+                        <i data-lucide="loader-2" class="spin-icon"></i> Translating...
                     </div>
                     <div id="translation-text" class="translation-text notranslate" translate="no"></div>
                 </div>
@@ -856,20 +856,20 @@
 
             <!-- Eylem Tuşları -->
             <div class="popover-footer notranslate" translate="no" style="flex-wrap: wrap; gap: 6px;">
-                <button id="btn-speak-text" class="popover-btn" title="Seslendir">
-                    <i data-lucide="volume-2"></i> Dinle
+                <button id="btn-speak-text" class="popover-btn" title="Listen">
+                    <i data-lucide="volume-2"></i> Listen
                 </button>
-                <button id="btn-save-word" class="popover-btn" title="Sözlüğe Kaydet">
-                    <i data-lucide="bookmark-plus"></i> Kaydet
+                <button id="btn-save-word" class="popover-btn" title="Save to Dictionary">
+                    <i data-lucide="bookmark-plus"></i> Save
                 </button>
-                <button id="btn-replace-text" class="popover-btn" title="Metni Değiştir">
-                    <i data-lucide="edit-3"></i> Düzenle
+                <button id="btn-replace-text" class="popover-btn" title="Replace Text">
+                    <i data-lucide="edit-3"></i> Replace
                 </button>
-                <button id="btn-web-search" class="popover-btn" title="Web'de Ara">
-                    <i data-lucide="globe"></i> Web Ara
+                <button id="btn-web-search" class="popover-btn" title="Web Search">
+                    <i data-lucide="globe"></i> Web Search
                 </button>
-                <button id="btn-select-all" class="popover-btn" title="Tümünü Seç">
-                    <i data-lucide="check-square"></i> Tümünü Seç
+                <button id="btn-select-all" class="popover-btn" title="Select All">
+                    <i data-lucide="check-square"></i> Select All
                 </button>
             </div>
         </div>
@@ -878,15 +878,15 @@
         <nav class="app-navbar glass">
             <button class="nav-item" data-view="view-profile">
                 <i data-lucide="user"></i>
-                <span>Profil</span>
+                <span>Profile</span>
             </button>
             <button class="nav-item active" data-view="view-home">
                 <i data-lucide="home"></i>
-                <span>Anasayfa</span>
+                <span>Home</span>
             </button>
             <button class="nav-item" data-view="view-settings">
                 <i data-lucide="settings"></i>
-                <span>Ayarlar</span>
+                <span>Settings</span>
             </button>
         </nav>
 
@@ -894,10 +894,10 @@
 
     <!-- Uygulama Scriptleri -->
     <script src="capacitor.js"></script>
-    <script src="js/db.js?v=44"></script>
-    <script src="js/utils.js?v=44"></script>
-    <script src="js/translate.js?v=44"></script>
-    <script src="js/reader.js?v=44"></script>
-    <script src="js/app.js?v=44"></script>
+    <script src="js/db.js?v=45"></script>
+    <script src="js/utils.js?v=45"></script>
+    <script src="js/translate.js?v=45"></script>
+    <script src="js/reader.js?v=45"></script>
+    <script src="js/app.js?v=45"></script>
 </body>
 </html>

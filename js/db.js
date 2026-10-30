@@ -162,7 +162,7 @@ const wordsDb = {
                 word: wordObj.word,
                 meaning: wordObj.meaning,
                 context: wordObj.context || "",
-                bookTitle: wordObj.bookTitle || "Bilinmeyen Kaynak",
+                bookTitle: wordObj.bookTitle || "Unknown Source",
                 bookId: wordObj.bookId || "",
                 addedAt: Date.now()
             });
@@ -347,7 +347,7 @@ const backupDb = {
             }
         };
 
-        report(5, "Veritabanı okunuyor...");
+        report(5, "Reading database...");
 
         const blobParts = [];
         blobParts.push(
@@ -360,7 +360,7 @@ const backupDb = {
         for (let i = 0; i < bookKeys.length; i++) {
             const key = bookKeys[i];
             const pct = Math.min(75, 10 + Math.round(((i + 1) / Math.max(1, bookKeys.length)) * 65));
-            report(pct, `Kitaplar yedekleniyor (${i + 1} / ${bookKeys.length})...`);
+            report(pct, `Backing up books (${i + 1} / ${bookKeys.length})...`);
 
             const book = await db.books.getItem(key);
             if (!book) continue;
@@ -376,7 +376,7 @@ const backupDb = {
             exportedBookCount++;
         }
 
-        report(82, "Sözlük, metin değişimleri ve klasörler hazırlanıyor...");
+        report(82, "Preparing dictionary, text replacements, and folders...");
 
         // 2. Sözlük kelimeleri
         const words = await wordsDb.getAllWords();
@@ -407,7 +407,7 @@ const backupDb = {
         blobParts.push(`,"settings":${JSON.stringify(settings)}`);
         blobParts.push(`,"localStorageData":${JSON.stringify(localStorageData)}}`);
 
-        report(95, "Yedek dosyası paketleniyor...");
+        report(95, "Packaging backup file...");
         const blob = new Blob(blobParts, { type: 'application/json;charset=utf-8' });
         return {
             blob,
@@ -419,7 +419,7 @@ const backupDb = {
 
     async importDatabase(backupData, onProgress = null) {
         if (!backupData || typeof backupData !== 'object') {
-            throw new Error("Geçersiz yedek dosyası formatı.");
+            throw new Error("Invalid backup file format.");
         }
 
         const report = (pct, msg) => {
@@ -436,7 +436,7 @@ const backupDb = {
 
         // 1. Ayarları ve Manuel Klasörleri Geri Yükle
         if (backupData.settings && typeof backupData.settings === 'object') {
-            report(15, "Ayarlar ve klasörler geri yükleniyor...");
+            report(15, "Restoring settings and folders...");
             for (const [sKey, sVal] of Object.entries(backupData.settings)) {
                 if (sKey === 'customFolders' && Array.isArray(sVal)) {
                     const existingFolders = (await db.settings.getItem('customFolders')) || [];
@@ -467,7 +467,7 @@ const backupDb = {
 
         // 3. Sözlük Kelimelerini Geri Yükle
         if (Array.isArray(backupData.words)) {
-            report(30, `Sözlük kelimeleri yükleniyor (${backupData.words.length})...`);
+            report(30, `Restoring dictionary words (${backupData.words.length})...`);
             for (const w of backupData.words) {
                 if (w && w.word) {
                     const id = (w.id || w.word).trim().toLowerCase();
@@ -482,7 +482,7 @@ const backupDb = {
 
         // 4. Metin Değişimlerini Geri Yükle
         if (Array.isArray(backupData.replacements)) {
-            report(45, `Metin değişimleri yükleniyor (${backupData.replacements.length})...`);
+            report(45, `Restoring text replacements (${backupData.replacements.length})...`);
             for (const r of backupData.replacements) {
                 if (r && r.originalText && r.replacedText) {
                     const id = (r.id || r.originalText).trim().toLowerCase();
@@ -502,7 +502,7 @@ const backupDb = {
                 const b = backupData.books[i];
                 if (!b || !b.id) continue;
                 const pct = Math.min(95, 50 + Math.round(((i + 1) / Math.max(1, backupData.books.length)) * 45));
-                report(pct, `Kitaplar geri yükleniyor (${i + 1} / ${backupData.books.length})...`);
+                report(pct, `Restoring books (${i + 1} / ${backupData.books.length})...`);
 
                 const { fileBase64, ...bookMeta } = b;
                 if (fileBase64) {
