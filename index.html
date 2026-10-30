@@ -15,7 +15,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <!-- CSS Stylesheet -->
-    <link rel="stylesheet" href="css/styles.css?v=43">
+    <link rel="stylesheet" href="css/styles.css?v=44">
     <script>
         (function() {
             try {
@@ -324,6 +324,9 @@
             </div>
         </div>
 
+        <!-- Ortak Kapak Fotoğrafı Seçici Input (Kitap / Cilt / Klasör Kapağı Değiştirme İçin) -->
+        <input type="file" id="cover-image-input" accept="image/*" style="display: none;">
+
         <!-- Tekil Kitap Başlığı ve Yazar Düzenleme Modalı -->
         <div id="edit-book-modal" class="modal-overlay" style="display: none;">
             <div class="modal-content glass">
@@ -337,6 +340,21 @@
                     <p id="edit-book-modal-desc" class="modal-desc" style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px; line-height: 1.4;">
                         Aynı yazar ve aynı başlığa sahip kitaplar ana sayfada otomatik olarak tek bir klasör içinde ciltler halinde gruplanır.
                     </p>
+                    <!-- Kitap Kapak Fotoğrafı Değiştirme Alanı -->
+                    <div style="display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); margin-bottom: 6px;">
+                        <img id="edit-book-cover-preview" src="" alt="Kapak" style="width: 48px; height: 68px; object-fit: cover; border-radius: 6px; flex-shrink: 0; border: 1px solid var(--border-color); background: var(--bg-surface-solid);">
+                        <div style="display: flex; flex-direction: column; gap: 6px; flex: 1;">
+                            <span style="font-size: 12px; font-weight: 600; color: var(--text-primary);">Kitap Kapak Fotoğrafı</span>
+                            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                <button type="button" id="btn-change-book-cover" class="action-outline-btn-sm" style="padding: 6px 10px; font-size: 11px; display: flex; align-items: center; gap: 5px; border-color: var(--accent-color); color: var(--accent-color);">
+                                    <i data-lucide="image" style="width: 13px; height: 13px;"></i> Resmi Değiştir
+                                </button>
+                                <button type="button" id="btn-reset-book-cover" class="action-outline-btn-sm" style="padding: 6px 10px; font-size: 11px;">
+                                    Varsayılana Dön
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                     <div class="input-group">
                         <label for="edit-book-title-input">Kitap / Seri Başlığı</label>
                         <input type="text" id="edit-book-title-input" placeholder="Kitap veya seri adını girin...">
@@ -370,6 +388,17 @@
                     </button>
                 </div>
                 <div class="modal-body" style="overflow-y: auto; flex: 1; padding-right: 2px;">
+                    <div style="display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); margin-bottom: 8px;">
+                        <img id="create-folder-cover-preview" src="" alt="Klasör Kapağı" style="width: 42px; height: 60px; object-fit: cover; border-radius: 6px; flex-shrink: 0; border: 1px solid var(--border-color); background: var(--bg-surface-solid);">
+                        <div style="display: flex; flex-direction: column; gap: 5px; flex: 1;">
+                            <span style="font-size: 12px; font-weight: 600; color: var(--text-primary);">Klasör Kapak Resmi (İsteğe Bağlı)</span>
+                            <div style="display: flex; gap: 6px;">
+                                <button type="button" id="btn-pick-create-folder-cover" class="action-outline-btn-sm" style="padding: 5px 10px; font-size: 11px; display: flex; align-items: center; gap: 5px; border-color: var(--accent-color); color: var(--accent-color);">
+                                    <i data-lucide="image" style="width: 13px; height: 13px;"></i> Klasör Resmi Seç
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                     <div class="input-group">
                         <label for="create-folder-title-input">Klasör / Seri Adı</label>
                         <input type="text" id="create-folder-title-input" placeholder="Örn: Overlord, Solo Leveling...">
@@ -405,10 +434,34 @@
                         </div>
                         <span id="folder-modal-subtitle">Yazar • 0 Cilt</span>
                     </div>
-                    <button id="btn-edit-folder-meta" class="icon-btn glass" style="width: 38px; height: 38px; border-radius: var(--radius-md); border: 1px solid var(--border-color);" title="Klasörü ve Kitapları Düzenle">
-                        <i data-lucide="edit-2" style="width: 16px; height: 16px;"></i>
-                    </button>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <button id="btn-toggle-folder-bookshelf" class="icon-btn glass" style="width: 38px; height: 38px; border-radius: var(--radius-md); border: 1px solid var(--border-color);" title="Klasörü Bir Bütün Olarak Kitaplığa Ekle / Çıkar">
+                            <i data-lucide="star" style="width: 16px; height: 16px;"></i>
+                        </button>
+                        <button id="btn-edit-folder-meta" class="icon-btn glass" style="width: 38px; height: 38px; border-radius: var(--radius-md); border: 1px solid var(--border-color);" title="Klasörü ve Kitapları Düzenle">
+                            <i data-lucide="edit-2" style="width: 16px; height: 16px;"></i>
+                        </button>
+                    </div>
                 </header>
+                <!-- Klasör İçeriği İstatistikleri (Cilt, Bölüm, Sayfa, Kelime) -->
+                <div id="folder-stats-bar" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--border-color); background: rgba(128,128,128,0.04);">
+                    <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color);">
+                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">CİLT</span>
+                        <span id="folder-stat-volumes" style="font-size: 13px; font-weight: 700; color: var(--text-primary);">0</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color);">
+                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">BÖLÜM</span>
+                        <span id="folder-stat-chapters" style="font-size: 13px; font-weight: 700; color: var(--text-primary);">0</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color);">
+                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SAYFA</span>
+                        <span id="folder-stat-pages" style="font-size: 13px; font-weight: 700; color: var(--text-primary);">0</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color);">
+                        <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">KELİME</span>
+                        <span id="folder-stat-words" style="font-size: 13px; font-weight: 700; color: var(--accent-color);">0</span>
+                    </div>
+                </div>
                 <div class="folder-modal-body">
                     <div id="folder-book-grid" class="book-grid">
                         <!-- Klasördeki ciltler dinamik olarak buraya eklenir -->
@@ -427,8 +480,22 @@
                     </button>
                 </div>
                 <div class="modal-body folder-manage-modal-body">
-                    <!-- Klasör Başlığı ve Yazar Alanı -->
+                    <!-- Klasör Başlığı, Yazar ve Kapak Resmi Alanı -->
                     <div class="folder-meta-edit-box glass">
+                        <div style="display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: var(--radius-sm); background: rgba(128,128,128,0.06); border: 1px solid var(--border-color); margin-bottom: 10px;">
+                            <img id="manage-folder-cover-preview" src="" alt="Klasör Kapağı" style="width: 46px; height: 66px; object-fit: cover; border-radius: 6px; flex-shrink: 0; border: 1px solid var(--border-color); background: var(--bg-surface-solid);">
+                            <div style="display: flex; flex-direction: column; gap: 6px; flex: 1;">
+                                <span style="font-size: 12px; font-weight: 600; color: var(--text-primary);">Klasör Kapak Fotoğrafı</span>
+                                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                    <button type="button" id="btn-change-folder-cover" class="action-outline-btn-sm" style="padding: 5px 10px; font-size: 11px; display: flex; align-items: center; gap: 5px; border-color: var(--accent-color); color: var(--accent-color);">
+                                        <i data-lucide="image" style="width: 13px; height: 13px;"></i> Klasör Resmini Değiştir
+                                    </button>
+                                    <button type="button" id="btn-reset-folder-cover" class="action-outline-btn-sm" style="padding: 5px 10px; font-size: 11px;">
+                                        Varsayılana Dön
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                         <div class="folder-meta-inputs">
                             <div class="input-group">
                                 <label for="manage-folder-title-input">Klasör Başlığı</label>
@@ -827,10 +894,10 @@
 
     <!-- Uygulama Scriptleri -->
     <script src="capacitor.js"></script>
-    <script src="js/db.js?v=43"></script>
-    <script src="js/utils.js?v=43"></script>
-    <script src="js/translate.js?v=43"></script>
-    <script src="js/reader.js?v=43"></script>
-    <script src="js/app.js?v=43"></script>
+    <script src="js/db.js?v=44"></script>
+    <script src="js/utils.js?v=44"></script>
+    <script src="js/translate.js?v=44"></script>
+    <script src="js/reader.js?v=44"></script>
+    <script src="js/app.js?v=44"></script>
 </body>
 </html>

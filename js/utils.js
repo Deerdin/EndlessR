@@ -61,7 +61,7 @@ const utils = {
         
         // Uzun başlıkları bölerek yazdır
         ctx.font = 'bold 22px "Outfit", sans-serif';
-        const words = title.split(' ');
+        const words = (title || 'Kitap').split(' ');
         let lines = [];
         let currentLine = words[0] || '';
 
@@ -100,27 +100,233 @@ const utils = {
     // String için hash kodu üret (tutarlı gradyan seçimi için)
     hashCode(str) {
         let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            const char = str.charCodeAt(i);
+        const s = String(str || '');
+        for (let i = 0; i < s.length; i++) {
+            const char = s.charCodeAt(i);
             hash = ((hash << 5) - hash) + char;
             hash = hash & hash;
         }
         return hash;
     },
 
+    // Düz metin içindeki gerçek kelime sayısını hesaplar
+    countWordsInText(text) {
+        if (!text || typeof text !== 'string') return 0;
+        const cleaned = text
+            .replace(/[\u200B-\u200D\uFEFF]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        if (!cleaned) return 0;
+        const tokens = cleaned.split(' ');
+        let count = 0;
+        for (let i = 0; i < tokens.length; i++) {
+            if (/[a-zA-Z0-9À-ÿçğıöşüÇĞİÖŞÜ]/.test(tokens[i])) {
+                count++;
+            }
+        }
+        return count;
+    },
+
+    // Sayıları binlik ayraçla okunaklı biçimlendirir (örn. 124.580)
+    formatNumber(num) {
+        const n = Number(num) || 0;
+        return n.toLocaleString('tr-TR');
+    },
+
+    // Kullanıcının yüklediği kapak fotoğrafını (klasör veya kitap/cilt için) optimize edilmiş Base64 JPEG'e dönüştürür
+    async processUploadedCoverImage(file) {
+        return new Promise((resolve, reject) => {
+            if (!file || !file.type || !file.type.startsWith('image/')) {
+                reject(new Error('Lütfen geçerli bir resim dosyası seçin.'));
+                return;
+            }
+            const fileReader = new FileReader();
+            fileReader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    try {
+                        const targetW = 420;
+                        const targetH = 630;
+                        const canvas = document.createElement('canvas');
+                        canvas.width = targetW;
+                        canvas.height = targetH;
+                        const ctx = canvas.getContext('2d');
+
+                        ctx.fillStyle = '#121214';
+                        ctx.fillRect(0, 0, targetW, targetH);
+
+                        const imgRatio = img.width / Math.max(1, img.height);
+                        const canvasRatio = targetW / targetH;
+                        let drawW = targetW;
+                        let drawH = targetH;
+                        let offsetX = 0;
+                        let offsetY = 0;
+
+                        if (imgRatio > canvasRatio) {
+                            drawH = targetH;
+                            drawW = img.width * (targetH / Math.max(1, img.height));
+                            offsetX = (targetW - drawW) / 2;
+                        } else {
+                            drawW = targetW;
+                            drawH = img.height * (targetW / Math.max(1, img.width));
+                            offsetY = (targetH - drawH) / 2;
+                        }
+
+                        ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                        resolve(dataUrl);
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                img.onerror = () => reject(new Error('Resim okunamadı.'));
+                img.src = e.target.result;
+            };
+            fileReader.onerror = () => reject(new Error('Dosya okunamadı.'));
+            fileReader.readAsDataURL(file);
+        });
+    },
+
+    // EPUB ArrayBuffer içinden hızlıca toplam kelime, sayfa ve bölüm sayısını hesaplar (JSZip ile)
+    async computeEpubStatsFromBuffer(arrayBuffer) {
+        try {
+            if (!arrayBuffer || typeof JSZip === 'undefined') {
+                return { wordCount: 0, pageCount: 0, chapterCount: 0 };
+            }
+            const zip = await JSZip.loadAsync(arrayBuffer.slice ? arrayBuffer.slice(0) : arrayBuffer);
+            const fileNames = Object.keys(zip.files);
+
+            // 1. İçindekiler (TOC) dosyasından bölüm sayısını bulmayı dene
+            let tocChapterCount = 0;
+            const ncxFile = fileNames.find(f => /\.ncx$/i.test(f));
+            if (ncxFile && zip.files[ncxFile]) {
+                const ncxText = await zip.files[ncxFile].async('string');
+                const navPoints = ncxText.match(/<navPoint\b/gi);
+                if (navPoints && navPoints.length > 0) {
+                    tocChapterCount = navPoints.length;
+                }
+            }
+            if (tocChapterCount === 0) {
+                const navFile = fileNames.find(f => /(?:^|\/)(?:nav|toc)\.(?:xhtml|html|htm)$/i.test(f));
+                if (navFile && zip.files[navFile]) {
+                    const navText = await zip.files[navFile].async('string');
+                    const liMatches = navText.match(/<a\b[^>]*href=/gi);
+                    if (liMatches && liMatches.length > 0) {
+                        tocChapterCount = liMatches.length;
+                    }
+                }
+            }
+
+            // 2. Tüm içerik (XHTML / HTML) dosyalarından kelime sayısını topla
+            const htmlFiles = fileNames.filter(f => {
+                if (zip.files[f].dir) return false;
+                if (!/\.(?:xhtml|html|htm)$/i.test(f)) return false;
+                if (/(?:^|\/)(?:nav|toc|cover|titlepage|copyright)\.(?:xhtml|html|htm)$/i.test(f)) return false;
+                return true;
+            });
+
+            let totalWords = 0;
+            let contentChapterCount = 0;
+
+            for (const fName of htmlFiles) {
+                try {
+                    const rawHtml = await zip.files[fName].async('string');
+                    const bodyMatch = rawHtml.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
+                    const contentHtml = bodyMatch ? bodyMatch[1] : rawHtml;
+                    const plain = contentHtml
+                        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+                        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+                        .replace(/<[^>]+>/g, ' ')
+                        .replace(/&(?:nbsp|#160);/gi, ' ')
+                        .replace(/&[a-zA-Z0-9#]+;/g, "'");
+                    const wCount = this.countWordsInText(plain);
+                    totalWords += wCount;
+                    if (wCount >= 80) {
+                        contentChapterCount++;
+                    }
+                } catch (e) {}
+            }
+
+            const finalChapterCount = tocChapterCount > 0
+                ? tocChapterCount
+                : Math.max(1, contentChapterCount || htmlFiles.length);
+            // Standart e-kitap sayfası = 250 kelime
+            const finalPageCount = totalWords > 0 ? Math.max(1, Math.ceil(totalWords / 250)) : Math.max(1, htmlFiles.length);
+
+            return {
+                wordCount: totalWords,
+                pageCount: finalPageCount,
+                chapterCount: finalChapterCount
+            };
+        } catch (err) {
+            console.warn("EPUB istatistik hesaplama hatası:", err);
+            return { wordCount: 0, pageCount: 0, chapterCount: 0 };
+        }
+    },
+
+    // PDF ArrayBuffer içinden toplam kelime, sayfa ve bölüm sayısını hesaplar
+    async computePdfStatsFromBuffer(arrayBuffer, existingPdfDoc = null) {
+        try {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+            const pdf = existingPdfDoc || await pdfjsLib.getDocument({ data: arrayBuffer.slice ? arrayBuffer.slice(0) : arrayBuffer }).promise;
+            const totalPages = pdf.numPages || 1;
+
+            let chapterCount = 0;
+            try {
+                const outline = await pdf.getOutline();
+                if (Array.isArray(outline) && outline.length > 0) {
+                    chapterCount = outline.length;
+                }
+            } catch (e) {}
+            if (chapterCount === 0) {
+                chapterCount = Math.max(1, Math.ceil(totalPages / 15));
+            }
+
+            const sampleLimit = Math.min(totalPages, 60);
+            let sampleWords = 0;
+            for (let p = 1; p <= sampleLimit; p++) {
+                try {
+                    const page = await pdf.getPage(p);
+                    const tc = await page.getTextContent();
+                    const pageStr = (tc && Array.isArray(tc.items)) ? tc.items.map(item => item.str || '').join(' ') : '';
+                    sampleWords += this.countWordsInText(pageStr);
+                } catch (e) {}
+            }
+
+            const totalWords = sampleLimit < totalPages
+                ? Math.round((sampleWords / Math.max(1, sampleLimit)) * totalPages)
+                : sampleWords;
+
+            return {
+                wordCount: totalWords,
+                pageCount: totalPages,
+                chapterCount
+            };
+        } catch (err) {
+            console.warn("PDF istatistik hesaplama hatası:", err);
+            return { wordCount: 0, pageCount: 0, chapterCount: 0 };
+        }
+    },
+
+    async computeBookStats(arrayBuffer, type) {
+        if (!arrayBuffer) return { wordCount: 0, pageCount: 0, chapterCount: 0 };
+        if (type === 'pdf') {
+            return await this.computePdfStatsFromBuffer(arrayBuffer);
+        }
+        return await this.computeEpubStatsFromBuffer(arrayBuffer);
+    },
+
     // PDF dosyasından metadata ve kapak resmi (İlk Sayfa) çıkarma
     async extractPdfMetadata(arrayBuffer, fileName) {
         try {
-            // pdf.js worker yapılandırması
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
             
-            const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+            const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice ? arrayBuffer.slice(0) : arrayBuffer });
             const pdf = await loadingTask.promise;
             
-            let title = fileName.replace(/\.[^/.]+$/, ""); // Uzantıyı sil
+            let title = fileName.replace(/\.[^/.]+$/, "");
             let author = "Bilinmeyen Yazar";
 
-            // PDF metadata çekmeyi dene
             try {
                 const meta = await pdf.getMetadata();
                 if (meta && meta.info) {
@@ -131,11 +337,10 @@ const utils = {
                 console.warn("PDF metadata alınamadı:", e);
             }
 
-            // İlk sayfayı kapak resmi olarak render et
             let coverUrl = null;
             try {
                 const page = await pdf.getPage(1);
-                const viewport = page.getViewport({ scale: 0.5 }); // Küçük ölçek yeterli
+                const viewport = page.getViewport({ scale: 0.5 });
                 
                 const canvas = document.createElement('canvas');
                 canvas.width = viewport.width;
@@ -153,11 +358,16 @@ const utils = {
                 coverUrl = this.generateGradientPlaceholder(title, author);
             }
 
+            const stats = await this.computePdfStatsFromBuffer(arrayBuffer, pdf);
+
             return {
                 title,
                 author,
                 coverUrl,
-                totalPages: pdf.numPages
+                totalPages: pdf.numPages,
+                wordCount: stats.wordCount,
+                pageCount: stats.pageCount || pdf.numPages,
+                chapterCount: stats.chapterCount
             };
         } catch (err) {
             console.error("PDF yüklenirken kritik hata:", err);
@@ -170,8 +380,9 @@ const utils = {
         return new Promise(async (resolve, reject) => {
             let book = null;
             try {
-                // EpubJS ile kitabı geçici yükle
-                book = ePub(arrayBuffer);
+                const stats = await this.computeEpubStatsFromBuffer(arrayBuffer);
+
+                book = ePub(arrayBuffer.slice ? arrayBuffer.slice(0) : arrayBuffer);
                 
                 await book.opened;
                 const metadata = await book.loaded.metadata;
@@ -179,7 +390,6 @@ const utils = {
                 let title = metadata.title || fileName.replace(/\.[^/.]+$/, "");
                 let author = metadata.creator || "Bilinmeyen Yazar";
                 
-                // Kapak görseli alma
                 let coverUrl = null;
                 try {
                     const coverPath = await book.coverUrl();
@@ -205,7 +415,6 @@ const utils = {
                     coverUrl = this.generateGradientPlaceholder(title, author);
                 }
 
-                // Kitap objesini bellekten boşaltmak için kapat
                 if (book) {
                     try { book.destroy(); } catch(d) {}
                 }
@@ -213,7 +422,10 @@ const utils = {
                 resolve({
                     title,
                     author,
-                    coverUrl
+                    coverUrl,
+                    wordCount: stats.wordCount,
+                    pageCount: stats.pageCount,
+                    chapterCount: stats.chapterCount
                 });
 
             } catch (err) {
@@ -224,7 +436,10 @@ const utils = {
                 resolve({
                     title: fileName.replace(/\.[^/.]+$/, ""),
                     author: "Bilinmeyen Yazar",
-                    coverUrl: this.generateGradientPlaceholder(fileName, "Bilinmeyen Yazar")
+                    coverUrl: this.generateGradientPlaceholder(fileName, "Bilinmeyen Yazar"),
+                    wordCount: 0,
+                    pageCount: 0,
+                    chapterCount: 0
                 });
             }
         });

@@ -104,7 +104,7 @@ const booksDb = {
         }
     },
 
-    // Kitap başlık, yazar, cilt veya klasör bilgilerini (dosya verisini koruyarak) güncelle
+    // Kitap başlık, yazar, cilt, kapak resmi, istatistik veya klasör bilgilerini (dosya verisini koruyarak) güncelle
     async updateBookMetadata(id, updates) {
         try {
             const book = await db.books.getItem(id);
@@ -115,6 +115,11 @@ const booksDb = {
             if (updates.folderId !== undefined) book.folderId = updates.folderId;
             if (updates.unfoldered !== undefined) book.unfoldered = updates.unfoldered;
             if (updates.isFavorite !== undefined) book.isFavorite = updates.isFavorite;
+            if (updates.coverUrl !== undefined) book.coverUrl = updates.coverUrl;
+            if (typeof updates.wordCount === 'number') book.wordCount = updates.wordCount;
+            if (typeof updates.pageCount === 'number') book.pageCount = updates.pageCount;
+            if (typeof updates.chapterCount === 'number') book.chapterCount = updates.chapterCount;
+            if (updates.statsCalculated !== undefined) book.statsCalculated = updates.statsCalculated;
             await db.books.setItem(id, book);
             return true;
         } catch (err) {

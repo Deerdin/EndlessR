@@ -1376,8 +1376,26 @@ const reader = {
             // Metin değişikliklerini (find-replace) uygula
             this.applyReplacementsToPdfElement(textLayerDiv, this.currentBookId);
 
+            // Sayfadaki kelime sayısını hesapla ve sayfa başına ekle
+            const pdfPageText = (textContent && Array.isArray(textContent.items))
+                ? textContent.items.map(it => it.str || '').join(' ')
+                : '';
+            const pdfWordCount = (typeof utils !== 'undefined' && utils.countWordsInText)
+                ? utils.countWordsInText(pdfPageText)
+                : (pdfPageText.trim() ? pdfPageText.trim().split(/\s+/).length : 0);
+
+            const pdfWordBanner = document.createElement('div');
+            pdfWordBanner.className = 'endlessr-pdf-word-count notranslate';
+            pdfWordBanner.setAttribute('translate', 'no');
+            pdfWordBanner.style.cssText = 'width: 100%; max-width: ' + Math.floor(viewport.width) + 'px; text-align: center; font-size: 12px; font-weight: 600; opacity: 0.72; padding: 6px 10px; margin-bottom: 6px; border-bottom: 1px solid rgba(128,128,128,0.2); letter-spacing: 0.2px;';
+            const formattedPdfWords = (typeof utils !== 'undefined' && utils.formatNumber)
+                ? utils.formatNumber(pdfWordCount)
+                : pdfWordCount;
+            this.setUntranslatableContent(pdfWordBanner, `📖 Bu sayfada ${formattedPdfWords} kelime bulunuyor`, false);
+
             // Viewer'ı güncelle
             viewerContainer.innerHTML = '';
+            viewerContainer.appendChild(pdfWordBanner);
             viewerContainer.appendChild(pageContainer);
 
             // Eğer kaydedilmiş bir dikey kaydırma konumu varsa ve açılış sayfasıysa anında uygula
@@ -2245,7 +2263,14 @@ const reader = {
         const selectors = 'p, h1, h2, h3, h4, h5, h6, li, blockquote';
         const rawCandidates = Array.from(doc.querySelectorAll(selectors + ', div'));
         const iframeElements = rawCandidates.filter(el => {
-            if (el.classList && (el.classList.contains('epub-chapter-footer') || el.classList.contains('epub-chapter-spacer'))) {
+            if (el.classList && (
+                el.classList.contains('epub-chapter-footer') ||
+                el.classList.contains('epub-chapter-spacer') ||
+                el.classList.contains('endlessr-page-word-count')
+            )) {
+                return false;
+            }
+            if (el.closest && el.closest('.endlessr-page-word-count, .epub-chapter-footer, .epub-chapter-spacer')) {
                 return false;
             }
             if (el.tagName.toLowerCase() === 'div') {
@@ -2668,12 +2693,12 @@ const reader = {
         if (this.settings.fixSpacing) {
             css += `
                 /* Manuel Boşluk Düzeltme: İki yana yaslama kaynaklı kelime arası boşlukları kaldır */
-                p, li, blockquote, div:not(.epub-chapter-footer):not(.epub-chapter-spacer) {
+                p, li, blockquote, div:not(.epub-chapter-footer):not(.epub-chapter-spacer):not(.endlessr-page-word-count) {
                     text-align: left !important;
                     word-spacing: normal !important;
                     letter-spacing: normal !important;
                 }
-                h1, h2, h3, h4, h5, h6, [align="center"], .center {
+                h1, h2, h3, h4, h5, h6, [align="center"], .center, .endlessr-page-word-count {
                     text-align: center !important;
                 }
             `;
@@ -2684,7 +2709,7 @@ const reader = {
                 body.endlessr-reformatted-body p,
                 body.endlessr-reformatted-body li,
                 body.endlessr-reformatted-body blockquote,
-                body.endlessr-reformatted-body div:not(.epub-chapter-footer):not(.epub-chapter-spacer) {
+                body.endlessr-reformatted-body div:not(.epub-chapter-footer):not(.epub-chapter-spacer):not(.endlessr-page-word-count) {
                     text-align: left !important;
                     word-spacing: normal !important;
                     letter-spacing: normal !important;
@@ -2779,6 +2804,63 @@ const reader = {
         customStyle.textContent = css;
         this.applySmartReformatToDoc(doc);
         this.applySpacingFixToDoc(doc);
+        this.updatePageWordCountBanner(doc);
+    },
+
+    // Her sayfanın / bölümün en başına o sayfada kaç kelime olduğunu gösteren bilgi barı ekler
+    updatePageWordCountBanner(doc) {
+        if (!doc || !doc.body) return;
+        const body = doc.body;
+
+        // Varsa eski kelime sayacı barını kaldır
+        body.querySelectorAll('.endlessr-page-word-count').forEach(el => el.remove());
+
+        // Kelime sayısını hesapla (footer, spacer, script, style hariç)
+        const clone = body.cloneNode(true);
+        clone.querySelectorAll('.epub-chapter-footer, .epub-chapter-spacer, .endlessr-page-word-count, script, style, noscript').forEach(el => el.remove());
+        const rawText = clone.innerText || clone.textContent || '';
+        const wordCount = (typeof utils !== 'undefined' && utils.countWordsInText)
+            ? utils.countWordsInText(rawText)
+            : (rawText.trim() ? rawText.trim().split(/\s+/).filter(Boolean).length : 0);
+
+        if (wordCount <= 0) return;
+
+        const formattedCount = (typeof utils !== 'undefined' && utils.formatNumber)
+            ? utils.formatNumber(wordCount)
+            : String(wordCount);
+
+        const banner = doc.createElement('div');
+        banner.className = 'endlessr-page-word-count notranslate';
+        banner.setAttribute('translate', 'no');
+        banner.style.cssText = `
+            display: block !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+            text-align: center !important;
+            font-size: 12px !important;
+            font-weight: 600 !important;
+            opacity: 0.68 !important;
+            padding: 8px 10px 8px 10px !important;
+            margin: 0 0 14px 0 !important;
+            border-bottom: 1px solid rgba(128, 128, 128, 0.22) !important;
+            text-indent: 0 !important;
+            letter-spacing: 0.2px !important;
+            user-select: none !important;
+        `;
+
+        // Chrome sayfa çevirisinin bu satırı çevirmemesi için Shadow DOM içine yaz
+        try {
+            const shadow = banner.attachShadow({ mode: 'open' });
+            const span = doc.createElement('span');
+            span.setAttribute('translate', 'no');
+            span.className = 'notranslate';
+            span.textContent = `📖 Bu sayfada ${formattedCount} kelime bulunuyor`;
+            shadow.appendChild(span);
+        } catch (e) {
+            banner.textContent = `📖 Bu sayfada ${formattedCount} kelime bulunuyor`;
+        }
+
+        body.insertBefore(banner, body.firstChild);
     },
 
     // Sayfa Biçimlendirme Butonu Arayüzünü Güncelleme
@@ -3018,6 +3100,7 @@ const reader = {
             if (body.getAttribute('data-smart-reformatted') === 'true' && body.__endlessrOrigHtml !== undefined) {
                 const footer = body.querySelector('.epub-chapter-footer');
                 const spacer = body.querySelector('.epub-chapter-spacer');
+                body.querySelectorAll('.endlessr-page-word-count').forEach(el => el.remove());
                 if (footer) footer.remove();
                 if (spacer) spacer.remove();
 
@@ -3037,7 +3120,8 @@ const reader = {
             return;
         }
 
-        // Bölüm sonu butonlarını ve boşluk elemanını geçici olarak ayır
+        // Bölüm başı kelime sayacı, bölüm sonu butonları ve boşluk elemanını geçici olarak ayır
+        body.querySelectorAll('.endlessr-page-word-count').forEach(el => el.remove());
         const footer = body.querySelector('.epub-chapter-footer');
         const spacer = body.querySelector('.epub-chapter-spacer');
         if (footer) footer.remove();
@@ -3966,7 +4050,7 @@ const reader = {
                 try {
                     if (iframe && iframe.contentDocument && iframe.contentDocument.body) {
                         const clone = iframe.contentDocument.body.cloneNode(true);
-                        clone.querySelectorAll('.epub-chapter-footer, script, style, noscript').forEach(el => el.remove());
+                        clone.querySelectorAll('.epub-chapter-footer, .endlessr-page-word-count, script, style, noscript').forEach(el => el.remove());
                         frameTexts.push(clone.innerText || clone.textContent || "");
                     }
                 } catch (err) {}
