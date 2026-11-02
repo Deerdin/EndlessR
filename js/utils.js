@@ -314,13 +314,17 @@ const utils = {
 
     // PDF ArrayBuffer içinden toplam kelime, sayfa ve bölüm sayısını hesaplar
     async computePdfStatsFromBuffer(fileData, existingPdfDoc = null) {
+        let createdLocalPdf = false;
+        let pdf = existingPdfDoc;
         try {
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
-            let pdf = existingPdfDoc;
             if (!pdf) {
                 const arrayBuffer = await this.toArrayBuffer(fileData);
-                if (!arrayBuffer) return { wordCount: 0, pageCount: 0, chapterCount: 0 };
-                pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                if (!arrayBuffer || arrayBuffer.byteLength === 0) return { wordCount: 0, pageCount: 0, chapterCount: 0 };
+                // Orijinal ArrayBuffer'ın PDF.js worker tarafından detach (boşaltılmasını) önlemek için kopya Uint8Array gönder
+                const dataCopy = new Uint8Array(arrayBuffer.slice(0));
+                pdf = await pdfjsLib.getDocument({ data: dataCopy }).promise;
+                createdLocalPdf = true;
             }
             const totalPages = pdf.numPages || 1;
 
@@ -350,6 +354,10 @@ const utils = {
                 ? Math.round((sampleWords / Math.max(1, sampleLimit)) * totalPages)
                 : sampleWords;
 
+            if (createdLocalPdf && pdf && typeof pdf.destroy === 'function') {
+                try { await pdf.destroy(); } catch (e) {}
+            }
+
             return {
                 wordCount: totalWords,
                 pageCount: totalPages,
@@ -357,6 +365,9 @@ const utils = {
             };
         } catch (err) {
             console.warn("PDF stats calculation error:", err);
+            if (createdLocalPdf && pdf && typeof pdf.destroy === 'function') {
+                try { await pdf.destroy(); } catch (e) {}
+            }
             return { wordCount: 0, pageCount: 0, chapterCount: 0 };
         }
     },
@@ -371,21 +382,28 @@ const utils = {
 
     // PDF dosyasından metadata ve kapak resmi (İlk Sayfa) çıkarma
     async extractPdfMetadata(arrayBuffer, fileName) {
+        let pdf = null;
+        const fallbackTitle = (fileName || 'Book').replace(/\.[^/.]+$/, "");
         try {
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
             
             const cleanBuffer = await this.toArrayBuffer(arrayBuffer);
-            const loadingTask = pdfjsLib.getDocument({ data: cleanBuffer });
-            const pdf = await loadingTask.promise;
+            if (!cleanBuffer || cleanBuffer.byteLength === 0) {
+                throw new Error("PDF file is empty.");
+            }
+            // Orijinal ArrayBuffer'ın PDF.js worker tarafından detach (boşaltılmasını) önlemek için kopya Uint8Array gönder
+            const pdfDataCopy = new Uint8Array(cleanBuffer.slice(0));
+            const loadingTask = pdfjsLib.getDocument({ data: pdfDataCopy });
+            pdf = await loadingTask.promise;
             
-            let title = fileName.replace(/\.[^/.]+$/, "");
+            let title = fallbackTitle;
             let author = "Unknown Author";
 
             try {
                 const meta = await pdf.getMetadata();
                 if (meta && meta.info) {
-                    if (meta.info.Title && meta.info.Title.trim()) title = meta.info.Title;
-                    if (meta.info.Author && meta.info.Author.trim()) author = meta.info.Author;
+                    if (meta.info.Title && meta.info.Title.trim()) title = meta.info.Title.trim();
+                    if (meta.info.Author && meta.info.Author.trim()) author = meta.info.Author.trim();
                 }
             } catch (e) {
                 console.warn("PDF metadata could not be read:", e);
@@ -412,20 +430,36 @@ const utils = {
                 coverUrl = this.generateGradientPlaceholder(title, author);
             }
 
+            const totalPages = pdf.numPages || 1;
             const stats = await this.computePdfStatsFromBuffer(cleanBuffer, pdf);
+
+            if (pdf && typeof pdf.destroy === 'function') {
+                try { await pdf.destroy(); } catch (d) {}
+            }
 
             return {
                 title,
                 author,
                 coverUrl,
-                totalPages: pdf.numPages,
+                totalPages,
                 wordCount: stats.wordCount,
-                pageCount: stats.pageCount || pdf.numPages,
-                chapterCount: stats.chapterCount
+                pageCount: stats.pageCount || totalPages,
+                chapterCount: stats.chapterCount || Math.max(1, Math.ceil(totalPages / 15))
             };
         } catch (err) {
-            console.error("Critical error loading PDF:", err);
-            throw new Error("Could not parse PDF file.");
+            console.error("PDF metadata extraction error, using fallback:", err);
+            if (pdf && typeof pdf.destroy === 'function') {
+                try { await pdf.destroy(); } catch (d) {}
+            }
+            return {
+                title: fallbackTitle,
+                author: "Unknown Author",
+                coverUrl: this.generateGradientPlaceholder(fallbackTitle, "Unknown Author"),
+                totalPages: 1,
+                wordCount: 0,
+                pageCount: 1,
+                chapterCount: 1
+            };
         }
     },
 
@@ -498,5 +532,54 @@ const utils = {
                 });
             }
         });
+    },
+
+    // Tarayıcının "deerdin.github.io web sitesinin mesajı" başlığını göstermeyen uygulama içi bildirim / uyarı penceresi
+    showAppAlert(message) {
+        try {
+            let overlay = document.getElementById('endlessr-custom-alert-overlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'endlessr-custom-alert-overlay';
+                overlay.className = 'modal-overlay notranslate';
+                overlay.setAttribute('translate', 'no');
+                overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0, 0, 0, 0.62); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 10000; padding: 20px;';
+                overlay.innerHTML = `
+                    <div class="modal-content glass" style="width: 100%; max-width: 340px; padding: 20px 18px 16px; border-radius: var(--radius-lg, 16px); border: 1px solid var(--border-color, rgba(255,255,255,0.12)); background: var(--bg-surface-solid, #18181b); box-shadow: 0 18px 40px rgba(0,0,0,0.45); display: flex; flex-direction: column; gap: 16px; text-align: center;">
+                        <p id="endlessr-custom-alert-text" style="font-size: 14px; font-weight: 500; line-height: 1.5; color: var(--text-primary, #f4f4f5); margin: 0; white-space: pre-line; word-break: break-word;"></p>
+                        <button type="button" id="endlessr-custom-alert-ok" class="action-btn" style="padding: 10px 16px; font-size: 14px; border-radius: var(--radius-md, 10px); width: 100%;">OK</button>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+
+                const closeAlert = () => {
+                    overlay.style.display = 'none';
+                };
+                const okBtn = overlay.querySelector('#endlessr-custom-alert-ok');
+                if (okBtn) okBtn.addEventListener('click', closeAlert);
+                overlay.addEventListener('click', (e) => {
+                    if (e.target === overlay) closeAlert();
+                });
+            }
+
+            const textEl = overlay.querySelector('#endlessr-custom-alert-text');
+            if (textEl) {
+                textEl.textContent = String(message !== undefined && message !== null ? message : '');
+            }
+            overlay.style.display = 'flex';
+            const okBtn = overlay.querySelector('#endlessr-custom-alert-ok');
+            if (okBtn) {
+                setTimeout(() => {
+                    try { okBtn.focus(); } catch (e) {}
+                }, 20);
+            }
+        } catch (e) {
+            console.warn("Custom alert fallback:", message, e);
+        }
     }
+};
+
+// Tüm alert(...) çağrılarını uygulama içi başlık içermeyen temiz pencereye yönlendir
+window.alert = function(message) {
+    utils.showAppAlert(message);
 };

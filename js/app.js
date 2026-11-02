@@ -556,7 +556,7 @@ const app = {
         if (this._isCalculatingMissingStats) return;
         this._attemptedStatsIds = this._attemptedStatsIds || new Set();
         const missing = (this.allLoadedBooks || []).filter(b =>
-            b && b.id && !this._attemptedStatsIds.has(b.id) && !(Number(b.wordCount) > 0)
+            b && b.id && !b.statsCalculated && !this._attemptedStatsIds.has(b.id) && !(Number(b.wordCount) > 0)
         );
         if (missing.length === 0) return;
 
@@ -1655,41 +1655,53 @@ const app = {
             const reader = new FileReader();
             
             reader.onload = async (e) => {
-                const arrayBuffer = e.target.result;
-                let metadata = {};
+                try {
+                    const rawBuffer = e.target.result;
+                    if (!rawBuffer || rawBuffer.byteLength === 0) {
+                        throw new Error("Selected file is empty.");
+                    }
+                    // Orijinal binary veriyi hiçbir kütüphanenin (PDF.js worker vb.) detach edememesi için bağımsız kopyasını sakla
+                    const preservedBuffer = rawBuffer.slice(0);
+                    let metadata = {};
 
-                if (fileExt === 'epub') {
-                    metadata = await utils.extractEpubMetadata(arrayBuffer, file.name);
-                } else if (fileExt === 'pdf') {
-                    metadata = await utils.extractPdfMetadata(arrayBuffer, file.name);
+                    if (fileExt === 'epub') {
+                        metadata = await utils.extractEpubMetadata(preservedBuffer.slice(0), file.name);
+                    } else if (fileExt === 'pdf') {
+                        metadata = await utils.extractPdfMetadata(preservedBuffer.slice(0), file.name);
+                    }
+
+                    const cleanFileName = file.name.replace(/\.[^/.]+$/, "");
+
+                    // Kitap veritabanı objesini oluştur
+                    const newBook = {
+                        id: utils.generateId(),
+                        title: metadata.title || cleanFileName,
+                        originalFileName: cleanFileName,
+                        author: metadata.author || "Unknown Author",
+                        coverUrl: metadata.coverUrl || utils.generateGradientPlaceholder(cleanFileName, "Unknown Author"),
+                        type: fileExt,
+                        file: preservedBuffer, // ArrayBuffer doğrudan IndexedDB'de binary saklanır
+                        totalPages: Number(metadata.totalPages) || Number(metadata.pageCount) || 1,
+                        wordCount: Number(metadata.wordCount) || 0,
+                        pageCount: Number(metadata.pageCount) || Number(metadata.totalPages) || 1,
+                        chapterCount: Number(metadata.chapterCount) || 1,
+                        statsCalculated: true,
+                        progressPercent: 0,
+                        lastLocation: null,
+                        addedAt: Date.now(),
+                        lastReadAt: 0
+                    };
+
+                    await booksDb.saveBook(newBook);
+                    
+                    // Başarı mesajı ve yenileme
+                    alert("Book uploaded.");
+                    await this.loadLibrary();
+                } catch (innerErr) {
+                    console.error("Upload processing error:", innerErr);
+                    alert("Could not upload file.");
+                    await this.loadLibrary();
                 }
-
-                const cleanFileName = file.name.replace(/\.[^/.]+$/, "");
-
-                // Kitap veritabanı objesini oluştur
-                const newBook = {
-                    id: utils.generateId(),
-                    title: metadata.title || cleanFileName,
-                    originalFileName: cleanFileName,
-                    author: metadata.author || "Unknown Author",
-                    coverUrl: metadata.coverUrl,
-                    type: fileExt,
-                    file: arrayBuffer, // ArrayBuffer doğrudan IndexedDB'de binary saklanır
-                    wordCount: Number(metadata.wordCount) || 0,
-                    pageCount: Number(metadata.pageCount) || 0,
-                    chapterCount: Number(metadata.chapterCount) || 1,
-                    statsCalculated: true,
-                    progressPercent: 0,
-                    lastLocation: null,
-                    addedAt: Date.now(),
-                    lastReadAt: 0
-                };
-
-                await booksDb.saveBook(newBook);
-                
-                // Başarı mesajı ve yenileme
-                alert("Book uploaded.");
-                await this.loadLibrary();
             };
 
             reader.onerror = () => {
@@ -2443,17 +2455,17 @@ const app = {
                     if (hasToc) {
                         const idx = Math.min(reader.numberedChapters.length - 1, Math.max(0, val - 1));
                         const href = reader.numberedChapters[idx].href;
-                        if (href) reader.epubRendition.display(href);
+                        if (href) reader.goToEpubHref(href);
                     } else if (reader.epubBook.spine) {
                         const total = reader.epubBook.spine.length;
                         const idx = Math.min(total - 1, Math.max(0, val - 1));
                         const spineItem = reader.epubBook.spine.get(idx);
                         if (spineItem && spineItem.href) {
-                            reader.epubRendition.display(spineItem.href);
+                            reader.goToEpubHref(spineItem.href);
                         }
                     }
                 } else if (reader.currentBookType === 'pdf' && reader.pdfDocument) {
-                    reader.renderPdfPage(val);
+                    reader.renderPdfPage(val, false);
                 }
             });
         }

@@ -68,6 +68,23 @@ const booksDb = {
     // Yeni kitap kaydet veya güncelle
     async saveBook(book) {
         try {
+            if (book && book.id) {
+                const hasValidBuffer = book.file && (
+                    (book.file instanceof ArrayBuffer && book.file.byteLength > 0) ||
+                    (ArrayBuffer.isView(book.file) && book.file.byteLength > 0) ||
+                    (typeof Blob !== 'undefined' && book.file instanceof Blob && book.file.size > 0)
+                );
+                if (!hasValidBuffer) {
+                    const existing = await db.books.getItem(book.id);
+                    if (existing && existing.file) {
+                        book.file = existing.file;
+                    }
+                } else if (ArrayBuffer.isView(book.file)) {
+                    book.file = book.file.buffer.slice(book.file.byteOffset, book.file.byteOffset + book.file.byteLength);
+                } else if (book.file instanceof ArrayBuffer) {
+                    book.file = book.file.slice(0);
+                }
+            }
             await db.books.setItem(book.id, book);
             return true;
         } catch (err) {
@@ -118,8 +135,11 @@ const booksDb = {
             if (updates.coverUrl !== undefined) book.coverUrl = updates.coverUrl;
             if (typeof updates.wordCount === 'number') book.wordCount = updates.wordCount;
             if (typeof updates.pageCount === 'number') book.pageCount = updates.pageCount;
+            if (typeof updates.totalPages === 'number') book.totalPages = updates.totalPages;
             if (typeof updates.chapterCount === 'number') book.chapterCount = updates.chapterCount;
             if (updates.statsCalculated !== undefined) book.statsCalculated = updates.statsCalculated;
+            if (typeof updates.lastReadAt === 'number') book.lastReadAt = updates.lastReadAt;
+            if (updates.detectedLang !== undefined) book.detectedLang = updates.detectedLang;
             await db.books.setItem(id, book);
             return true;
         } catch (err) {
