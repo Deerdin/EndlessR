@@ -1982,92 +1982,29 @@ const reader = {
         }
     },
 
-    // PDF İçindekiler (Outline) Listesi Yükleme
-    async loadPdfToc() {
+    // PDF İçindekiler Listesi (Tüm sayfalar Page 1, Page 2... olarak listelenir)
+    loadPdfToc() {
         const tocList = document.getElementById('toc-list');
         if (!tocList) return;
         tocList.innerHTML = '';
-        
-        // Üste hızlı sayfa numarasına atlama çubuğu (Jump to Page)
-        const jumpContainer = document.createElement('div');
-        jumpContainer.className = 'toc-jump-bar';
-        jumpContainer.style.cssText = 'display:flex; gap:8px; padding:10px 12px; margin-bottom:10px; border-bottom:1px solid var(--border-color); align-items:center; position:sticky; top:0; background:var(--bg-surface-solid); z-index:2;';
-        
-        const jumpInput = document.createElement('input');
-        jumpInput.type = 'number';
-        jumpInput.min = '1';
-        jumpInput.max = String(this.pdfTotalPages || 1);
-        jumpInput.value = String(this.pdfCurrentPage || 1);
-        jumpInput.placeholder = `Page 1 - ${this.pdfTotalPages || 1}`;
-        jumpInput.style.cssText = 'flex:1; min-width:0; padding:8px 10px; font-size:13px; border-radius:6px; border:1px solid var(--border-color); background:rgba(128,128,128,0.1); color:var(--text-primary); outline:none;';
 
-        const jumpBtn = document.createElement('button');
-        jumpBtn.type = 'button';
-        jumpBtn.className = 'action-btn';
-        jumpBtn.textContent = 'Go';
-        jumpBtn.style.cssText = 'padding:8px 14px; font-size:13px; font-weight:600; cursor:pointer; border-radius:6px; white-space:nowrap;';
+        const total = this.pdfTotalPages || 1;
+        const fragment = document.createDocumentFragment();
 
-        const performJump = () => {
-            const targetPage = parseInt(jumpInput.value, 10);
-            if (!isNaN(targetPage) && targetPage >= 1 && targetPage <= this.pdfTotalPages) {
-                this.renderPdfPage(targetPage, false);
+        for (let i = 1; i <= total; i++) {
+            const div = document.createElement('div');
+            div.className = 'toc-item';
+            if (i === this.pdfCurrentPage) div.classList.add('active');
+            div.textContent = `Page ${i}`;
+            div.setAttribute('data-page', String(i));
+            div.onclick = () => {
+                this.renderPdfPage(i, false);
                 this.closeTOCPanel();
-            }
-        };
-
-        jumpBtn.addEventListener('click', performJump);
-        jumpInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                performJump();
-            }
-        });
-
-        jumpContainer.appendChild(jumpInput);
-        jumpContainer.appendChild(jumpBtn);
-        tocList.appendChild(jumpContainer);
-
-        try {
-            const outline = await this.pdfDocument.getOutline();
-            if (outline && outline.length > 0) {
-                // İlk seviye başlıkları ekle
-                outline.forEach(item => {
-                    const div = document.createElement('div');
-                    div.className = 'toc-item';
-                    div.textContent = item.title;
-                    div.onclick = async () => {
-                        if (item.dest) {
-                            try {
-                                const destRef = typeof item.dest === 'string' ? item.dest : item.dest[0];
-                                const pageIndex = await this.pdfDocument.getPageIndex(destRef);
-                                this.renderPdfPage(pageIndex + 1, false);
-                                this.closeTOCPanel();
-                            } catch(e) {
-                                console.warn("Hedef sayfa bulunamadı:", e);
-                            }
-                        }
-                    };
-                    tocList.appendChild(div);
-                });
-            } else {
-                // İçindekiler outline yoksa sayfaları listele
-                const total = this.pdfTotalPages || 1;
-                const step = total > 100 ? 5 : 1;
-                for (let i = 1; i <= total; i += step) {
-                    const div = document.createElement('div');
-                    div.className = 'toc-item';
-                    if (i === this.pdfCurrentPage) div.classList.add('active');
-                    div.textContent = `Page ${i}`;
-                    div.onclick = () => {
-                        this.renderPdfPage(i, false);
-                        this.closeTOCPanel();
-                    };
-                    tocList.appendChild(div);
-                }
-            }
-        } catch (e) {
-            console.warn("Could not load table of contents:", e);
+            };
+            fragment.appendChild(div);
         }
+
+        tocList.appendChild(fragment);
     },
 
     // 4. Genel Sayfa Navigasyonları (EPUB & PDF)
@@ -2639,7 +2576,26 @@ const reader = {
     },
 
     openTOCPanel() {
-        document.getElementById('toc-panel').classList.add('open');
+        const tocPanel = document.getElementById('toc-panel');
+        if (tocPanel) tocPanel.classList.add('open');
+        if (this.currentBookType === 'pdf') {
+            const tocList = document.getElementById('toc-list');
+            if (tocList) {
+                const cur = this.pdfCurrentPage || 1;
+                const items = tocList.querySelectorAll('.toc-item');
+                items.forEach(item => {
+                    const pageNum = parseInt(item.getAttribute('data-page'), 10);
+                    if (pageNum === cur) {
+                        item.classList.add('active');
+                        setTimeout(() => {
+                            item.scrollIntoView({ block: 'center' });
+                        }, 50);
+                    } else {
+                        item.classList.remove('active');
+                    }
+                });
+            }
+        }
     },
 
     closeTOCPanel() {

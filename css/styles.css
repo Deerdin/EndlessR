@@ -1277,6 +1277,12 @@ html.reader-active-pdf .pdf-toc-pull-tab {
     background-color: var(--border-color);
 }
 
+.toc-item.active {
+    background-color: rgba(59, 130, 246, 0.2);
+    color: var(--accent-color);
+    font-weight: 600;
+}
+
 /* Görünüm Ayarları Paneli (Açılır Alt Panel) */
 .style-panel {
     position: absolute;
