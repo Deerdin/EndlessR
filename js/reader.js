@@ -242,11 +242,12 @@ const reader = {
 
     // Sonsuz kaydırma (Infinite) modunda sayfa sonuna yaklaşıldığında sonraki EPUB bölümünü veya PDF sayfasını otomatik yükler
     async checkAndAppendNextChapter() {
-        if (this.settings.readerType !== 'infinite') return;
+        const isInfinite = (this.currentBookType === 'pdf') || (this.settings.readerType === 'infinite');
+        if (!isInfinite) return;
         if (this.isRestoringBook || this.isRestoringPosition) return;
 
         const remainingScroll = this.getMaxScroll() - this.getScrollTop();
-        if (remainingScroll > 950) return;
+        if (remainingScroll > 1500) return;
 
         if (this.currentBookType === 'epub' && this.epubBook && this.epubBook.spine) {
             if (this._isAppendingInfiniteChapter) return;
@@ -281,6 +282,7 @@ const reader = {
             const nextPage = maxPage + 1;
             if (nextPage <= this.pdfTotalPages) {
                 await this.renderPdfPage(nextPage, true);
+                setTimeout(() => this.checkAndAppendNextChapter(), 250);
             }
         }
     },
@@ -1571,42 +1573,19 @@ const reader = {
         pdfViewerEl.innerHTML = '';
         document.getElementById('pdf-page-indicator').style.display = 'block';
 
-        const rType = this.settings.readerType || 'single';
         const prevArrow = document.getElementById('btn-prev-page');
         const nextArrow = document.getElementById('btn-next-page');
-        if (rType === 'old') {
-            if (prevArrow) prevArrow.style.display = 'flex';
-            if (nextArrow) nextArrow.style.display = 'flex';
-        } else {
-            if (prevArrow) prevArrow.style.display = 'none';
-            if (nextArrow) nextArrow.style.display = 'none';
-        }
+        if (prevArrow) prevArrow.style.display = 'none';
+        if (nextArrow) nextArrow.style.display = 'none';
 
-        // PDF boş alan ve sayfa tıklamalarında alt/üst barın sorunsuz açılıp kapanmasını sağla
+        // PDF modunda alt ve üst barların kapalı olduğundan emin ol (Kullanıcı PDF için bar açılmasını istemiyor)
+        this.closeStylePanel();
+        const readerHeader = document.querySelector('.reader-header');
+        if (readerHeader) readerHeader.classList.remove('open');
+
+        // PDF okurken yalnızca metin seçimi (çeviri) dinlenir; ekrana dokununca alt/üst bar AÇILMAZ
         const readerContainerEl = document.getElementById('reader-container') || pdfViewerEl;
         if (!readerContainerEl.__endlessrPdfBound) {
-            let pdfPointerDownX = 0;
-            let pdfPointerDownY = 0;
-            let pdfPointerDownTime = 0;
-
-            const recordPdfPointerDown = (clientX, clientY) => {
-                pdfPointerDownX = clientX;
-                pdfPointerDownY = clientY;
-                pdfPointerDownTime = Date.now();
-            };
-
-            readerContainerEl.addEventListener('pointerdown', (e) => {
-                if (this.currentBookType !== 'pdf') return;
-                recordPdfPointerDown(e.clientX, e.clientY);
-            }, { passive: true });
-
-            readerContainerEl.addEventListener('touchstart', (e) => {
-                if (this.currentBookType !== 'pdf') return;
-                if (e.touches && e.touches[0]) {
-                    recordPdfPointerDown(e.touches[0].clientX, e.touches[0].clientY);
-                }
-            }, { passive: true });
-
             readerContainerEl.addEventListener('mouseup', () => {
                 if (this.currentBookType !== 'pdf') return;
                 const sel = window.getSelection();
@@ -1622,58 +1601,6 @@ const reader = {
                     this.scheduleProcessSelection(window, document, 140);
                 }
             }, { passive: true });
-
-            readerContainerEl.addEventListener('click', (e) => {
-                if (this.currentBookType !== 'pdf') return;
-
-                // Tıklanan eleman buton, link, form elemanı vs. ise veya alt/üst panelin içindeyse işlem yapma
-                if (e.target.closest('button') || e.target.closest('a') || e.target.closest('input') || e.target.closest('select') || e.target.closest('.reader-header') || e.target.closest('#reader-options-panel') || e.target.closest('#translate-popover') || e.target.closest('#toc-panel')) {
-                    return;
-                }
-
-                // 1. ÖNCELİK: EĞER BARLAR ZATEN AÇIKSA, EKRANA TEKRAR TIKLANDIĞINDA MUTLAKA KAPAT!
-                // Herhangi bir mesafe, kaydırma veya seçim engeline takılmadan barları anında kapatır.
-                if (this.isReaderBarsOpen()) {
-                    this.closeStylePanel();
-                    this.hidePopover();
-                    try {
-                        const sel = window.getSelection();
-                        if (sel) sel.removeAllRanges();
-                    } catch (err) {}
-                    return;
-                }
-
-                // Popover veya TOC açıksa onları kapat
-                const popover = document.getElementById('translate-popover');
-                if (popover && popover.style.display === 'flex') {
-                    this.hidePopover();
-                    return;
-                }
-                const tocPanel = document.getElementById('toc-panel');
-                if (tocPanel && tocPanel.classList.contains('open')) {
-                    this.closeTOCPanel();
-                    return;
-                }
-
-                // 2. ÖNCELİK: BARLAR KAPALIYKEN AÇILMA KONTROLLERİ
-                // Kullanıcı kaydırma (scroll/drag) yapıyorsa tıklama olarak algılama (25px tolerans)
-                const clientX = (typeof e.clientX === 'number') ? e.clientX : pdfPointerDownX;
-                const clientY = (typeof e.clientY === 'number') ? e.clientY : pdfPointerDownY;
-                const movedDist = Math.hypot(clientX - pdfPointerDownX, clientY - pdfPointerDownY);
-                const clickDuration = Date.now() - pdfPointerDownTime;
-                if (movedDist > 25 || clickDuration > 600) {
-                    return;
-                }
-
-                // Eğer aktif olarak bir metin seçilip çeviri tetikleniyorsa barları açma
-                const sel = window.getSelection();
-                if (sel && sel.toString().trim().length > 1 && this.isProcessingSelection) {
-                    return;
-                }
-
-                // Barları aç
-                this.openStylePanel();
-            });
 
             readerContainerEl.__endlessrPdfBound = true;
         }
@@ -1716,6 +1643,11 @@ const reader = {
         }
 
         await this.renderPdfPage(this.pdfCurrentPage, false);
+
+        // PDF sonsuz kaydırması için sonraki sayfayı erkenden kuyruğa al
+        setTimeout(() => {
+            this.checkAndAppendNextChapter();
+        }, 200);
 
         // İlerlemeyi güncelle
         const percent = Math.round((this.pdfCurrentPage / this.pdfTotalPages) * 100);
@@ -1908,7 +1840,7 @@ const reader = {
             pageBlock.appendChild(pdfWordBanner);
             pageBlock.appendChild(pageContainer);
 
-            if (this.settings.readerType === 'single') {
+            if (this.settings.readerType === 'single' && this.currentBookType !== 'pdf') {
                 this.attachSinglePdfFooter(pageBlock, Math.floor(viewport.width));
             }
 
@@ -1960,9 +1892,8 @@ const reader = {
      
                 // PDF sayfa geçişini geçmişe kaydet (NavHistory)
                 if (typeof navHistory !== 'undefined' && !navHistory.isNavigatingBack) {
-                    if (this.isRestoringBook) {
-                        navHistory.updateTopReaderLocation(pageNumber, pageNumber);
-                    } else if (this.lastPdfPage !== pageNumber) {
+                    const top = navHistory.stack[navHistory.stack.length - 1];
+                    if (!top || top.type !== 'reader' || top.bookId !== this.currentBookId) {
                         navHistory.push({
                             type: 'reader',
                             bookId: this.currentBookId,
@@ -1970,6 +1901,9 @@ const reader = {
                             location: pageNumber,
                             spineIndex: pageNumber
                         });
+                    } else {
+                        // Sonsuz kaydırmada her sayfa için yeni adım ekleme, tek tuşla ana menüye dönülebilmesi için konumu güncelle
+                        navHistory.updateTopReaderLocation(pageNumber, pageNumber);
                     }
                 }
                 this.lastPdfPage = pageNumber;
@@ -1983,7 +1917,7 @@ const reader = {
             }
 
             // Sonsuz kaydırma modundaysa ve ekran henüz dolmadıysa sıradaki sayfayı kontrol et
-            if (this.settings.readerType === 'infinite') {
+            if (this.currentBookType === 'pdf' || this.settings.readerType === 'infinite') {
                 setTimeout(() => {
                     this.checkAndAppendNextChapter();
                 }, 150);
@@ -2798,6 +2732,11 @@ const reader = {
                 }
                 this.pdfSavedScrollTop = offsetInPage;
                 await this.renderPdfPage(this.pdfCurrentPage, false);
+
+        // PDF sonsuz kaydırması için sonraki sayfayı erkenden kuyruğa al
+        setTimeout(() => {
+            this.checkAndAppendNextChapter();
+        }, 200);
             }
         }
     },
@@ -5593,10 +5532,13 @@ window.addEventListener('scroll', () => {
     const isPanelOpen = optionsPanel && optionsPanel.classList.contains('open');
     
     // 1. Header Göster/Gizle mantığı:
-    // Aşağı kaydırırken gizle ve yukarı kaydırma başlangıç noktasını (upScrollAnchorY) güncelle.
+    // PDF modunda barlar tamamen kapalı tutulur.
+    // EPUB modunda: Aşağı kaydırırken gizle ve yukarı kaydırma başlangıç noktasını (upScrollAnchorY) güncelle.
     // Yukarı kaydırırken ufak dokunuşlarda hemen açma; yalnızca ekran yüksekliğinin en az 3'te 1'i (1/3)
     // kadar yukarı kaydırıldığında üst barı (.reader-header) aç.
-    if (header && !isPanelOpen) {
+    if (reader.currentBookType === 'pdf') {
+        if (header) header.classList.remove('open');
+    } else if (header && !isPanelOpen) {
         if (currentScrollY > lastScrollY) {
             upScrollAnchorY = currentScrollY;
             if (currentScrollY > 80) {
@@ -5630,7 +5572,8 @@ window.addEventListener('scroll', () => {
     }
 
     // 2. Okuma Konumunu Kaydetme ve Sonsuz Kaydırma (Infinite Scroll) Entegrasyonu
-    if (reader.settings.readerType === 'infinite' && !reader.isRestoringPosition) {
+    const isInfinite = (reader.currentBookType === 'pdf') || (reader.settings.readerType === 'infinite');
+    if (isInfinite && !reader.isRestoringPosition) {
         reader.checkAndAppendNextChapter();
     }
 

@@ -3260,8 +3260,43 @@ const app = {
         }
 
         const isReaderCurrentlyOpen = document.getElementById('view-reader').style.display === 'flex' || document.body.classList.contains('reader-active');
+        if (isReaderCurrentlyOpen) {
+            // Kitap okuma ekranındayken telefondan geri yapıldığında DOĞRUDAN ana menüye (kütüphaneye) dön
+            reader.closeReader(true);
+            
+            let popCount = 0;
+            while (navHistory.stack.length > 1 && navHistory.stack[navHistory.stack.length - 1].type === 'reader') {
+                navHistory.stack.pop();
+                popCount++;
+            }
+            
+            const prevEntry = navHistory.stack[navHistory.stack.length - 1];
+            const targetView = (prevEntry && prevEntry.type === 'view') ? (prevEntry.viewId || 'view-home') : 'view-home';
+            const targetSegment = (prevEntry && prevEntry.segmentId) ? prevEntry.segmentId : 'segment-books';
+            
+            navHistory.saveToSession();
+            this.switchView(targetView, targetSegment);
+            
+            if (!isPopState && popCount > 0) {
+                navHistory.isNavigatingBack = true;
+                navHistory.ignorePopStateCount++;
+                window.history.go(-popCount);
+                setTimeout(() => {
+                    navHistory.isNavigatingBack = false;
+                    if (navHistory.ignorePopStateCount > 0) {
+                        navHistory.ignorePopStateCount = 0;
+                    }
+                }, 250);
+            } else {
+                setTimeout(() => {
+                    navHistory.isNavigatingBack = false;
+                }, 100);
+            }
+            return;
+        }
+
         const folderModal = document.getElementById('folder-view-modal');
-        if (!isReaderCurrentlyOpen && folderModal && folderModal.style.display === 'flex') {
+        if (folderModal && folderModal.style.display === 'flex') {
             this.closeFolderModal();
             if (isPopState) {
                 window.history.pushState({ stackIndex: navHistory.stack.length - 1 }, "");
