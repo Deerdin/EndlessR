@@ -646,49 +646,48 @@ const reader = {
     updateActivePdfPageFromScroll() {
         if (this.currentBookType !== 'pdf' || !this.pdfDocument) return;
         const blocks = Array.from(document.querySelectorAll('#pdf-viewer .pdf-page-block[data-page-number]'));
-        if (blocks.length <= 1) return;
+        if (blocks.length === 0) return;
 
-        const focusY = Math.min(260, Math.round((window.innerHeight || 600) * 0.35));
+        const focusY = Math.min(300, Math.round((window.innerHeight || 600) * 0.4));
         let activeBlock = blocks[0];
         for (const blk of blocks) {
             const rect = blk.getBoundingClientRect();
-            if (rect.top <= focusY) {
+            if (rect.top <= focusY && rect.bottom > 0) {
                 activeBlock = blk;
-            } else {
-                break;
             }
         }
 
         const pageNum = parseInt(activeBlock.getAttribute('data-page-number'), 10);
-        if (!isNaN(pageNum) && pageNum >= 1 && pageNum !== this.pdfCurrentPage) {
+        if (!isNaN(pageNum) && pageNum >= 1) {
             this.pdfCurrentPage = pageNum;
-            const curEl = document.getElementById('pdf-current-page');
-            if (curEl) curEl.textContent = pageNum;
-            const percent = Math.round((pageNum / this.pdfTotalPages) * 100);
+            const percent = Math.min(100, Math.max(0, Math.round((pageNum / this.pdfTotalPages) * 100)));
             this.updateProgressBar(pageNum, percent, `Page ${pageNum} / ${this.pdfTotalPages}`);
             const chIndicator = document.getElementById('panel-chapter-indicator');
             if (chIndicator) {
                 chIndicator.textContent = `Page ${pageNum} / ${this.pdfTotalPages} (${percent}%)`;
+            }
+            if (this.bookData) {
+                this.bookData.progressPercent = percent;
             }
         }
     },
 
     savePdfScrollLocation() {
         if (this.currentBookType !== 'pdf' || !this.pdfDocument || !this.currentBookId) return;
-        if (this.settings.readerType === 'infinite') {
-            this.updateActivePdfPageFromScroll();
-        }
+        this.updateActivePdfPageFromScroll();
         const pageNum = this.pdfCurrentPage || 1;
-        let scrollOffset = Math.round(this.getScrollTop());
+        let scrollOffset = 0;
 
         const activeBlock = document.querySelector(`#pdf-viewer .pdf-page-block[data-page-number="${pageNum}"]`);
-        if (activeBlock && document.querySelectorAll('#pdf-viewer .pdf-page-block').length > 1) {
+        if (activeBlock) {
             const rect = activeBlock.getBoundingClientRect();
             scrollOffset = Math.max(0, Math.round(-rect.top));
+        } else {
+            scrollOffset = Math.round(this.getScrollTop());
         }
 
         const lastLocationString = `${pageNum};${scrollOffset}`;
-        const percent = Math.round((pageNum / this.pdfTotalPages) * 100);
+        const percent = Math.min(100, Math.max(0, Math.round((pageNum / this.pdfTotalPages) * 100)));
 
         if (this.bookData) {
             this.bookData.progressPercent = percent;
@@ -705,7 +704,7 @@ const reader = {
             } catch (e) {
                 console.warn("PDF scroll kaydetme hatası:", e);
             }
-        }, 400);
+        }, 300);
     },
 
     // Okuyucu Stil Ayarları (IndexedDB'den veya varsayılan)
@@ -1571,7 +1570,7 @@ const reader = {
         const pdfViewerEl = document.getElementById('pdf-viewer');
         pdfViewerEl.style.display = 'flex';
         pdfViewerEl.innerHTML = '';
-        document.getElementById('pdf-page-indicator').style.display = 'block';
+        document.getElementById('pdf-page-indicator').style.display = 'none';
 
         const prevArrow = document.getElementById('btn-prev-page');
         const nextArrow = document.getElementById('btn-next-page');
@@ -5446,12 +5445,21 @@ const reader = {
         }
         if (this.currentBookType === 'pdf' && this.currentBookId && this.pdfDocument) {
             if (this.pdfScrollTimeout) clearTimeout(this.pdfScrollTimeout);
-            const rawScrollY = this.getScrollTop();
-            const finalPdfScrollY = (rawScrollY === 0 && (this.lastValidScrollY || 0) > 40)
-                ? Math.round(this.lastValidScrollY)
-                : Math.round(rawScrollY);
-            const pdfLocation = `${this.pdfCurrentPage};${finalPdfScrollY}`;
-            const pdfPercent = Math.round((this.pdfCurrentPage / this.pdfTotalPages) * 100);
+            this.updateActivePdfPageFromScroll();
+            const pageNum = this.pdfCurrentPage || 1;
+            let scrollOffset = 0;
+            const activeBlock = document.querySelector(`#pdf-viewer .pdf-page-block[data-page-number="${pageNum}"]`);
+            if (activeBlock) {
+                const rect = activeBlock.getBoundingClientRect();
+                scrollOffset = Math.max(0, Math.round(-rect.top));
+            } else {
+                scrollOffset = Math.round(this.getScrollTop());
+            }
+            const pdfLocation = `${pageNum};${scrollOffset}`;
+            const pdfPercent = Math.min(100, Math.max(0, Math.round((pageNum / this.pdfTotalPages) * 100)));
+            try {
+                localStorage.setItem('endlessr_pdf_pos_' + this.currentBookId, pdfLocation);
+            } catch (e) {}
             if (this.bookData) {
                 this.bookData.lastLocation = pdfLocation;
                 this.bookData.progressPercent = pdfPercent;
@@ -5461,11 +5469,31 @@ const reader = {
         
         document.getElementById('view-reader').style.display = 'none';
 
+        // Okuyucudan çıkarken window ve app-container scroll'unu anında ve kesin olarak 0'a sıfırla
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+        const appCont = document.getElementById('app-container');
+        if (appCont) appCont.scrollTop = 0;
+
         document.documentElement.classList.remove('reader-active');
         document.body.classList.remove('reader-active');
         document.documentElement.style.backgroundColor = '';
         this.isRestoringBook = false;
-        window.scrollTo(0, 0);
+
+        requestAnimationFrame(() => {
+            window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+            if (appCont) appCont.scrollTop = 0;
+        });
+        setTimeout(() => {
+            window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+            if (appCont) appCont.scrollTop = 0;
+        }, 60);
+
         try { sessionStorage.removeItem('endlessr_reader_scroll'); } catch (e) {}
         
         // Belleği boşalt

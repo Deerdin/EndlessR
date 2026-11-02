@@ -453,7 +453,7 @@ body.theme-light .header-logo .logo-accent {
 
 /* Alt Navigasyon Barı */
 .app-navbar {
-    position: absolute;
+    position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
@@ -470,7 +470,7 @@ body.theme-light .header-logo .logo-accent {
     border-bottom: none;
     border-radius: 0;
     box-shadow: none !important;
-    z-index: 15;
+    z-index: 50;
     padding-top: 8px;
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
     box-sizing: border-box;
@@ -1160,17 +1160,9 @@ body.theme-light .header-logo .logo-accent {
     color: var(--text-secondary);
 }
 
-.pdf-indicator {
-    position: fixed;
-    bottom: 80px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 6px 12px;
-    border-radius: var(--radius-full);
-    font-size: 12px;
-    font-weight: 600;
-    z-index: 34;
-    box-shadow: var(--shadow-sm);
+.pdf-indicator,
+#pdf-page-indicator {
+    display: none !important;
 }
 
 /* Yan Panel (İçindekiler) */
@@ -2240,6 +2232,8 @@ body.theme-light .wtr-select {
         width: 100% !important;
         left: 50% !important;
         right: auto !important;
+        bottom: 0 !important;
+        position: fixed !important;
         transform: translateX(-50%) !important;
         border-left: 1px solid var(--border-color);
         border-right: 1px solid var(--border-color);

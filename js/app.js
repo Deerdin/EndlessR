@@ -214,12 +214,20 @@ const app = {
         const targetView = document.getElementById(viewId);
         if (!targetView) return;
 
+        // Ekran geçişinde window ve app-container scroll'larını kesin olarak sıfırla
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+        const appContainer = document.getElementById('app-container');
+        if (appContainer) appContainer.scrollTop = 0;
+
         // Tüm görünümleri pasif yap
         document.querySelectorAll('.app-view').forEach(view => {
             view.classList.remove('active');
         });
         // İlgili görünümü aktif yap
         targetView.classList.add('active');
+        targetView.scrollTop = 0;
 
         // Navigasyon barı düğmelerini güncelle
         document.querySelectorAll('.nav-item').forEach(btn => {
