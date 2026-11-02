@@ -312,7 +312,7 @@ body {
     flex-direction: column;
     overflow-y: auto;
     overflow-x: hidden;
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); /* Alt navigasyon barı payı */
+    padding-bottom: calc(env(safe-area-inset-bottom, 12px) + 84px); /* Alt navigasyon barı sınır payı */
     animation: fadeIn var(--transition-normal) forwards;
 }
 
@@ -457,11 +457,14 @@ body.theme-light .header-logo .logo-accent {
     bottom: 0;
     left: 0;
     right: 0;
-    height: 64px;
+    min-height: 78px;
+    height: auto;
     display: flex;
     justify-content: space-around;
     align-items: center;
-    background: var(--bg-app);
+    background: var(--bg-surface);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
     border-top: 1px solid var(--border-color);
     border-left: none;
     border-right: none;
@@ -469,7 +472,9 @@ body.theme-light .header-logo .logo-accent {
     border-radius: 0;
     box-shadow: none !important;
     z-index: 15;
-    padding-bottom: env(safe-area-inset-bottom); /* iOS ana ekran barı koruması */
+    padding-top: 10px;
+    padding-bottom: calc(env(safe-area-inset-bottom, 12px) + 8px);
+    box-sizing: border-box;
 }
 
 .nav-item {
