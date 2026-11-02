@@ -312,7 +312,7 @@ body {
     flex-direction: column;
     overflow-y: auto;
     overflow-x: hidden;
-    padding-bottom: calc(env(safe-area-inset-bottom, 12px) + 84px); /* Alt navigasyon barı sınır payı */
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 60px); /* Alt navigasyon barı sınır payı */
     animation: fadeIn var(--transition-normal) forwards;
 }
 
@@ -457,7 +457,6 @@ body.theme-light .header-logo .logo-accent {
     bottom: 0;
     left: 0;
     right: 0;
-    min-height: 50px;
     height: auto;
     display: flex;
     justify-content: space-around;
@@ -472,8 +471,8 @@ body.theme-light .header-logo .logo-accent {
     border-radius: 0;
     box-shadow: none !important;
     z-index: 15;
-    padding-top: 10px;
-    padding-bottom: calc(env(safe-area-inset-bottom, 12px) + 8px);
+    padding-top: 8px;
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
     box-sizing: border-box;
 }
 
@@ -484,12 +483,12 @@ body.theme-light .header-logo .logo-accent {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
     cursor: pointer;
     font-family: var(--font-sans);
     font-size: 11px;
     font-weight: 500;
-    padding: 8px 16px;
+    padding: 0 16px;
     border-radius: var(--radius-md);
     transition: color var(--transition-fast), background-color var(--transition-fast);
 }
