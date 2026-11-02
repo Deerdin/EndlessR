@@ -1047,13 +1047,10 @@ const reader = {
                     this.closeTOCPanel();
                     return;
                 }
-                const panel = document.getElementById('reader-options-panel');
-                if (panel) {
-                    if (panel.classList.contains('open')) {
-                        this.closeStylePanel();
-                    } else {
-                        this.openStylePanel();
-                    }
+                if (this.isReaderBarsOpen()) {
+                    this.closeStylePanel();
+                } else {
+                    this.openStylePanel();
                 }
             });
             epubViewerEl.__endlessrClickBound = true;
@@ -1411,6 +1408,12 @@ const reader = {
                     return;
                 }
 
+                // Eğer barlar zaten açıksa, ekrana tıklandığında hemen kapat
+                if (this.isReaderBarsOpen()) {
+                    this.closeStylePanel();
+                    return;
+                }
+
                 // Dokunarak Çeviri (tapToTranslate) aktifse ve geçerli bir kelimeye tıklanmışsa menüyü tetikleme
                 if (this.settings.tapToTranslate) {
                     let range;
@@ -1426,12 +1429,7 @@ const reader = {
                     }
                 }
 
-                const panel = document.getElementById('reader-options-panel');
-                if (panel.classList.contains('open')) {
-                    this.closeStylePanel();
-                } else {
-                    this.openStylePanel();
-                }
+                this.openStylePanel();
             });
         });
 
@@ -1584,45 +1582,68 @@ const reader = {
             if (nextArrow) nextArrow.style.display = 'none';
         }
 
-        // PDF boş alan tıklamalarında seçenekler panelinin açılıp kapanmasını ve metin seçiminde çeviri penceresini bağla
-        if (!pdfViewerEl.__endlessrPdfBound) {
-            pdfViewerEl.addEventListener('mouseup', () => {
+        // PDF boş alan ve sayfa tıklamalarında alt/üst barın sorunsuz açılıp kapanmasını sağla
+        const readerContainerEl = document.getElementById('reader-container') || pdfViewerEl;
+        if (!readerContainerEl.__endlessrPdfBound) {
+            let pdfPointerDownX = 0;
+            let pdfPointerDownY = 0;
+            let pdfPointerDownTime = 0;
+
+            const recordPdfPointerDown = (clientX, clientY) => {
+                pdfPointerDownX = clientX;
+                pdfPointerDownY = clientY;
+                pdfPointerDownTime = Date.now();
+            };
+
+            readerContainerEl.addEventListener('pointerdown', (e) => {
+                if (this.currentBookType !== 'pdf') return;
+                recordPdfPointerDown(e.clientX, e.clientY);
+            }, { passive: true });
+
+            readerContainerEl.addEventListener('touchstart', (e) => {
+                if (this.currentBookType !== 'pdf') return;
+                if (e.touches && e.touches[0]) {
+                    recordPdfPointerDown(e.touches[0].clientX, e.touches[0].clientY);
+                }
+            }, { passive: true });
+
+            readerContainerEl.addEventListener('mouseup', () => {
                 if (this.currentBookType !== 'pdf') return;
                 const sel = window.getSelection();
                 if (sel && sel.toString().trim().length > 0) {
                     this.scheduleProcessSelection(window, document, 120);
                 }
             });
-            pdfViewerEl.addEventListener('touchend', () => {
+
+            readerContainerEl.addEventListener('touchend', () => {
                 if (this.currentBookType !== 'pdf') return;
                 const sel = window.getSelection();
                 if (sel && sel.toString().trim().length > 0) {
                     this.scheduleProcessSelection(window, document, 140);
                 }
             }, { passive: true });
-            let pdfPointerDownX = 0;
-            let pdfPointerDownY = 0;
-            let pdfPointerDownTime = 0;
 
-            pdfViewerEl.addEventListener('pointerdown', (e) => {
-                pdfPointerDownX = e.clientX;
-                pdfPointerDownY = e.clientY;
-                pdfPointerDownTime = Date.now();
-            }, { passive: true });
-
-            pdfViewerEl.addEventListener('click', (e) => {
+            readerContainerEl.addEventListener('click', (e) => {
                 if (this.currentBookType !== 'pdf') return;
-                if (e.target.closest('button') || e.target.closest('a') || e.target.closest('input') || e.target.closest('select')) {
-                    return;
-                }
-                // Kullanıcı kaydırma (scroll/drag) yapıyorsa tıklama olarak algılama
-                const movedDist = Math.hypot(e.clientX - pdfPointerDownX, e.clientY - pdfPointerDownY);
-                if (movedDist > 12) {
-                    return;
-                }
-                const sel = window.getSelection();
-                if (sel && sel.toString().trim().length > 0) return;
 
+                // Tıklanan eleman buton, link, form elemanı vs. ise veya alt/üst panelin içindeyse işlem yapma
+                if (e.target.closest('button') || e.target.closest('a') || e.target.closest('input') || e.target.closest('select') || e.target.closest('.reader-header') || e.target.closest('#reader-options-panel') || e.target.closest('#translate-popover') || e.target.closest('#toc-panel')) {
+                    return;
+                }
+
+                // 1. ÖNCELİK: EĞER BARLAR ZATEN AÇIKSA, EKRANA TEKRAR TIKLANDIĞINDA MUTLAKA KAPAT!
+                // Herhangi bir mesafe, kaydırma veya seçim engeline takılmadan barları anında kapatır.
+                if (this.isReaderBarsOpen()) {
+                    this.closeStylePanel();
+                    this.hidePopover();
+                    try {
+                        const sel = window.getSelection();
+                        if (sel) sel.removeAllRanges();
+                    } catch (err) {}
+                    return;
+                }
+
+                // Popover veya TOC açıksa onları kapat
                 const popover = document.getElementById('translate-popover');
                 if (popover && popover.style.display === 'flex') {
                     this.hidePopover();
@@ -1633,16 +1654,28 @@ const reader = {
                     this.closeTOCPanel();
                     return;
                 }
-                const panel = document.getElementById('reader-options-panel');
-                if (panel) {
-                    if (panel.classList.contains('open')) {
-                        this.closeStylePanel();
-                    } else {
-                        this.openStylePanel();
-                    }
+
+                // 2. ÖNCELİK: BARLAR KAPALIYKEN AÇILMA KONTROLLERİ
+                // Kullanıcı kaydırma (scroll/drag) yapıyorsa tıklama olarak algılama (25px tolerans)
+                const clientX = (typeof e.clientX === 'number') ? e.clientX : pdfPointerDownX;
+                const clientY = (typeof e.clientY === 'number') ? e.clientY : pdfPointerDownY;
+                const movedDist = Math.hypot(clientX - pdfPointerDownX, clientY - pdfPointerDownY);
+                const clickDuration = Date.now() - pdfPointerDownTime;
+                if (movedDist > 25 || clickDuration > 600) {
+                    return;
                 }
+
+                // Eğer aktif olarak bir metin seçilip çeviri tetikleniyorsa barları açma
+                const sel = window.getSelection();
+                if (sel && sel.toString().trim().length > 1 && this.isProcessingSelection) {
+                    return;
+                }
+
+                // Barları aç
+                this.openStylePanel();
             });
-            pdfViewerEl.__endlessrPdfBound = true;
+
+            readerContainerEl.__endlessrPdfBound = true;
         }
 
         // PDF.js worker ayarı
@@ -2550,6 +2583,34 @@ const reader = {
     },
 
     // 7. Okuyucu Panel Kontrolleri
+    isReaderBarsOpen() {
+        const panel = document.getElementById('reader-options-panel');
+        const header = document.querySelector('.reader-header');
+        return Boolean((panel && panel.classList.contains('open')) || (header && header.classList.contains('open')));
+    },
+
+    toggleReaderBars() {
+        const popover = document.getElementById('translate-popover');
+        if (popover && popover.style.display === 'flex') {
+            this.hidePopover();
+            return;
+        }
+        const tocPanel = document.getElementById('toc-panel');
+        if (tocPanel && tocPanel.classList.contains('open')) {
+            this.closeTOCPanel();
+            return;
+        }
+        if (this.isReaderBarsOpen()) {
+            this.closeStylePanel();
+            try {
+                const sel = window.getSelection();
+                if (sel) sel.removeAllRanges();
+            } catch (e) {}
+        } else {
+            this.openStylePanel();
+        }
+    },
+
     openTOCPanel() {
         document.getElementById('toc-panel').classList.add('open');
     },
