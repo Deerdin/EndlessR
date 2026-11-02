@@ -312,7 +312,7 @@ body {
     flex-direction: column;
     overflow-y: auto;
     overflow-x: hidden;
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 68px); /* Alt navigasyon barı payı */
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); /* Alt navigasyon barı payı */
     animation: fadeIn var(--transition-normal) forwards;
 }
 
@@ -457,15 +457,17 @@ body.theme-light .header-logo .logo-accent {
     bottom: 0;
     left: 0;
     right: 0;
-    height: 68px;
+    height: 64px;
     display: flex;
     justify-content: space-around;
     align-items: center;
-    background: var(--bg-surface);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
+    background: var(--bg-app);
     border-top: 1px solid var(--border-color);
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
     border-radius: 0;
+    box-shadow: none !important;
     z-index: 15;
     padding-bottom: env(safe-area-inset-bottom); /* iOS ana ekran barı koruması */
 }
