@@ -1,6 +1,6 @@
 // ================= SERVICE WORKER (sw.js) - ÇEVRİMDIŞI ÖNBELLEK YÖNETİMİ =================
 
-const CACHE_NAME = 'endlessr-reader-v49';
+const CACHE_NAME = 'endlessr-reader-v50';
 
 // Önbelleğe alınacak kaynaklar (Yerel dosyalar ve CDN kütüphaneleri)
 const ASSETS_TO_CACHE = [

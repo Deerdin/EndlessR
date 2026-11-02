@@ -653,7 +653,8 @@ const app = {
 
     // 2. Kütüphaneyi IndexedDB'den Yükle
     async loadLibrary() {
-        const seq = ++(this._loadLibrarySeq || (this._loadLibrarySeq = 0));
+        this._loadLibrarySeq = (this._loadLibrarySeq || 0) + 1;
+        const seq = this._loadLibrarySeq;
         const bookGrid = document.getElementById('book-grid');
         const profileBookGrid = document.getElementById('profile-book-grid');
         const emptyState = document.getElementById('library-empty');
