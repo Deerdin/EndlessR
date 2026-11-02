@@ -235,6 +235,9 @@ const app = {
         }
         if (viewId === 'view-settings') {
             this.updateDatabaseStatsUI();
+            if (typeof pdfToEpub !== 'undefined' && pdfToEpub.refreshLibraryPdfList) {
+                pdfToEpub.refreshLibraryPdfList();
+            }
         }
 
         // Geçmişe kaydet (eğer geri gidilmiyorsa)

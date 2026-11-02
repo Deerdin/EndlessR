@@ -175,40 +175,65 @@ const reader = {
         }
 
         this._isAppendingInfiniteChapter = true;
+        if (!this._infiniteAppendedSpines) this._infiniteAppendedSpines = new Set();
+        // İçerik kancası (hooks.content) asenkron çalıştığı için bu bölümün "alta eklenen" bölüm olduğunu işaretle;
+        // böylece kanca aktif bölümü/konumu ezmez ve sayfayı en üste atmaz
+        this._infiniteAppendedSpines.add(spineIndex);
+        let view = null;
         try {
             const mgr = this.epubRendition.manager;
-            if (!mgr || typeof mgr.createView !== 'function' || !mgr.views) return false;
+            if (!mgr || typeof mgr.createView !== 'function' || !mgr.views) {
+                this._infiniteAppendedSpines.delete(spineIndex);
+                return false;
+            }
 
             const savedScrollY = this.getScrollTop();
-            const view = mgr.createView(section, { forceRight: false });
-            mgr.views.append(view);
+            view = mgr.createView(section, false);
 
             view.onDisplayed = mgr.afterDisplayed.bind(mgr);
-            if (typeof view.onAxis === 'function') {
-                view.onAxis("vertical");
-            }
-            if (view.iframe) {
-                view.iframe.setAttribute('data-spine-index', String(spineIndex));
+            if (typeof mgr.afterResized === 'function') {
+                view.onResize = mgr.afterResized.bind(mgr);
             }
             if (view.element) {
                 view.element.setAttribute('data-spine-index', String(spineIndex));
+                view.element.classList.add('endlessr-appended-chapter');
                 view.element.style.borderTop = '2px dashed rgba(128, 128, 128, 0.25)';
-                view.element.style.marginTop = '18px';
-                view.element.style.paddingTop = '12px';
             }
 
-            await view.display(mgr.request);
+            mgr.views.append(view);
+
+            const request = mgr.request || (this.epubBook && this.epubBook.load ? this.epubBook.load.bind(this.epubBook) : undefined);
+            await view.display(request);
+
             if (view.iframe) {
                 view.iframe.setAttribute('data-spine-index', String(spineIndex));
             }
-            this.expandEpubIframePreservingScroll();
 
+            // epub.js yeni görünümü "visibility: hidden" olarak oluşturur; normalde manager.display() sonunda
+            // views.show() çağrılır. Manuel eklemede bu adım atlandığı için bölüm bomboş görünüyordu.
+            if (typeof view.show === 'function') {
+                view.show();
+            }
+            if (view.element) view.element.style.visibility = 'visible';
+            if (view.iframe) view.iframe.style.visibility = 'visible';
+
+            this.expandEpubIframePreservingScroll();
             if (savedScrollY > 0 && Math.abs(this.getScrollTop() - savedScrollY) > 2) {
                 this.setScrollTop(savedScrollY);
             }
+
+            // Stiller / kelime sayacı / çeviri uygulandıktan sonra yüksekliği tekrar kesinleştir
+            setTimeout(() => this.expandEpubIframePreservingScroll(), 350);
+            setTimeout(() => this.expandEpubIframePreservingScroll(), 900);
             return true;
         } catch (err) {
             console.warn("Error appending next chapter in infinite scroll:", err);
+            this._infiniteAppendedSpines.delete(spineIndex);
+            try {
+                if (view && this.epubRendition && this.epubRendition.manager && this.epubRendition.manager.views) {
+                    this.epubRendition.manager.views.remove(view);
+                }
+            } catch (e) {}
             return false;
         } finally {
             this._isAppendingInfiniteChapter = false;
@@ -236,12 +261,13 @@ const reader = {
             if (maxSpine < 0 && typeof this.lastSpineIndex === 'number') {
                 maxSpine = this.lastSpineIndex;
             }
+            const spineLen = (this.epubBook.spine.spineItems && this.epubBook.spine.spineItems.length) || this.epubBook.spine.length || 0;
             const nextSpine = maxSpine + 1;
-            if (nextSpine >= 0 && nextSpine < this.epubBook.spine.length) {
+            if (nextSpine >= 0 && nextSpine < spineLen) {
                 const appended = await this.appendEpubSpineChapter(nextSpine);
                 if (appended) {
-                    // Eğer eklenen bölüm çok kısaysa ve hala ekran dolmadıysa bir sonrakini de kontrol et
-                    setTimeout(() => this.checkAndAppendNextChapter(), 150);
+                    // Eklenen bölümün yüksekliği kesinleştikten sonra ekran hâlâ dolmadıysa bir sonrakini de kontrol et
+                    setTimeout(() => this.checkAndAppendNextChapter(), 700);
                 }
             }
         } else if (this.currentBookType === 'pdf' && this.pdfDocument) {
@@ -268,6 +294,7 @@ const reader = {
             if (mgr && mgr.views && Array.isArray(mgr.views._views) && mgr.views._views.length > 1) {
                 try { mgr.clear(); } catch (e) {}
             }
+            if (this._infiniteAppendedSpines) this._infiniteAppendedSpines.clear();
             this.lastValidScrollY = 0;
             this.lastValidScrollRatio = 0;
             this.setScrollTop(0);
@@ -1007,6 +1034,7 @@ const reader = {
         }
         epubViewerEl.innerHTML = '';
         this._isAppendingInfiniteChapter = false;
+        this._infiniteAppendedSpines = new Set();
 
         // Iframe dışı (boş alan) tıklamalarında da alt menü panelinin açılıp kapanmasını sağla
         if (!epubViewerEl.__endlessrClickBound) {
@@ -1204,7 +1232,8 @@ const reader = {
 
                 // Bölüm indeksini ve aktif konumu her yeni bölüm yüklendiğinde güncelle
                 // (Sonsuz kaydırmada alta eklenen bölümler mevcut aktif konumu ezmez, kaydırıldıkça güncellenir)
-                if (secIdx !== null && !this._isAppendingInfiniteChapter) {
+                const isAppendedChapter = secIdx !== null && !!(this._infiniteAppendedSpines && this._infiniteAppendedSpines.has(secIdx));
+                if (secIdx !== null && !this._isAppendingInfiniteChapter && !isAppendedChapter) {
                     const prevSpine = this.lastSpineIndex;
                     this.lastSpineIndex = secIdx;
                     const sec = this.epubBook && this.epubBook.spine ? this.epubBook.spine.get(secIdx) : null;
