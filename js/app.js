@@ -819,7 +819,11 @@ const app = {
 
     // Kitap Silme İşlemi
     async deleteBook(id, title, force = false) {
-        if (force || confirm(`Are you sure you want to delete "${title}"?`)) {
+        const confirmed = force || (typeof utils !== 'undefined' && utils.showAppConfirm
+            ? await utils.showAppConfirm(`Are you sure you want to delete "${title}"?`, { confirmText: 'Delete', danger: true })
+            : confirm(`Are you sure you want to delete "${title}"?`));
+
+        if (confirmed) {
             const success = await booksDb.deleteBook(id);
             if (success) {
                 const panel = document.getElementById('book-details-panel');
@@ -840,7 +844,11 @@ const app = {
             ? `Are you sure you want to delete the folder "${group.title}" and all ${bookCount} books inside it?`
             : `Are you sure you want to delete the folder "${group.title}"?`;
 
-        if (confirm(msg)) {
+        const confirmed = typeof utils !== 'undefined' && utils.showAppConfirm
+            ? await utils.showAppConfirm(msg, { confirmText: 'Delete Folder', danger: true })
+            : confirm(msg);
+
+        if (confirmed) {
             if (group.books && group.books.length > 0) {
                 for (const b of group.books) {
                     await booksDb.deleteBook(b.id);
@@ -1233,7 +1241,10 @@ const app = {
                     const btnRowDelete = row.querySelector('.btn-row-delete');
                     if (btnRowDelete) {
                         btnRowDelete.onclick = async () => {
-                            if (confirm(`Are you sure you want to permanently delete "${book.title}"?`)) {
+                            const confirmed = typeof utils !== 'undefined' && utils.showAppConfirm
+                                ? await utils.showAppConfirm(`Are you sure you want to permanently delete "${book.title}"?`, { confirmText: 'Delete', danger: true })
+                                : confirm(`Are you sure you want to permanently delete "${book.title}"?`);
+                            if (confirmed) {
                                 await booksDb.deleteBook(book.id);
                                 await this.loadLibrary();
                             }
@@ -2280,7 +2291,10 @@ const app = {
             if (reader.currentBookId) {
                 const bookId = reader.currentBookId;
                 const bookTitle = reader.currentBookTitle;
-                if (confirm(`Are you sure you want to permanently delete "${bookTitle}" from your library?`)) {
+                const confirmed = typeof utils !== 'undefined' && utils.showAppConfirm
+                    ? await utils.showAppConfirm(`Are you sure you want to permanently delete "${bookTitle}" from your library?`, { confirmText: 'Delete', danger: true })
+                    : confirm(`Are you sure you want to permanently delete "${bookTitle}" from your library?`);
+                if (confirmed) {
                     const success = await booksDb.deleteBook(bookId);
                     if (success) {
                         reader.closeReader();
@@ -2724,39 +2738,6 @@ const app = {
             }
         });
 
-        // PDF Tek Tıklama ile Seçenekler Panelini Açma/Kapatma
-        document.getElementById('pdf-viewer').addEventListener('click', (e) => {
-            // Tıklanan eleman buton veya link ise menüyü tetikleme
-            if (e.target.closest('button') || e.target.closest('a') || e.target.closest('input') || e.target.closest('select')) {
-                return;
-            }
-
-            // Seçili metin varsa menüyü tetikleme
-            const selection = window.getSelection();
-            if (selection && selection.toString().trim().length > 0) {
-                return;
-            }
-
-            // Çeviri popover'ı veya İçindekiler (TOC) paneli açıksa önce onları kapat
-            const popover = document.getElementById('translate-popover');
-            if (popover && popover.style.display === 'flex') {
-                reader.hidePopover();
-                return;
-            }
-            const tocPanel = document.getElementById('toc-panel');
-            if (tocPanel && tocPanel.classList.contains('open')) {
-                reader.closeTOCPanel();
-                return;
-            }
-            
-            const panel = document.getElementById('reader-options-panel');
-            if (panel.classList.contains('open')) {
-                reader.closeStylePanel();
-            } else {
-                reader.openStylePanel();
-            }
-        });
-
         // Tarayıcı geri tuşu (popstate) olayını dinle
         window.addEventListener('popstate', (e) => {
             if (navHistory.ignorePopStateCount > 0) {
@@ -2968,9 +2949,12 @@ const app = {
             }
         }
 
-        card.onclick = () => {
+        card.onclick = async () => {
             if (this.isLibraryDeleteMode && !options.inFolder) {
-                if (confirm(`Do you want to delete "${book.title}"?`)) {
+                const confirmed = typeof utils !== 'undefined' && utils.showAppConfirm
+                    ? await utils.showAppConfirm(`Do you want to delete "${book.title}"?`, { confirmText: 'Delete', danger: true })
+                    : confirm(`Do you want to delete "${book.title}"?`);
+                if (confirmed) {
                     this.deleteBook(book.id, book.title, true);
                 }
                 return;
@@ -3035,7 +3019,11 @@ const app = {
     },
 
     async deleteReplacement(id) {
-        if (confirm("Are you sure you want to delete this replacement? The text in the book will revert to its original form.")) {
+        const confirmed = typeof utils !== 'undefined' && utils.showAppConfirm
+            ? await utils.showAppConfirm("Are you sure you want to delete this replacement? The text in the book will revert to its original form.", { confirmText: 'Delete', danger: true })
+            : confirm("Are you sure you want to delete this replacement? The text in the book will revert to its original form.");
+
+        if (confirmed) {
             const success = await replacementsDb.deleteReplacement(id);
             if (success) {
                 await this.loadReplacements();
@@ -3132,10 +3120,10 @@ const app = {
 
     async importAppBackup(file) {
         if (!file) return;
-        const confirmRestore = confirm(
-            `Do you want to restore the database backup from "${file.name}"?\n\n` +
-            `Books, reading progress, folders, dictionary words, text replacements, and settings will be restored.`
-        );
+        const msg = `Do you want to restore the database backup from "${file.name}"?\n\nBooks, reading progress, folders, dictionary words, text replacements, and settings will be restored.`;
+        const confirmRestore = typeof utils !== 'undefined' && utils.showAppConfirm
+            ? await utils.showAppConfirm(msg, { confirmText: 'Restore', danger: true })
+            : confirm(msg);
         if (!confirmRestore) return;
 
         const statusBox = document.getElementById('backup-status-box');

@@ -1600,9 +1600,24 @@ const reader = {
                     this.scheduleProcessSelection(window, document, 140);
                 }
             }, { passive: true });
+            let pdfPointerDownX = 0;
+            let pdfPointerDownY = 0;
+            let pdfPointerDownTime = 0;
+
+            pdfViewerEl.addEventListener('pointerdown', (e) => {
+                pdfPointerDownX = e.clientX;
+                pdfPointerDownY = e.clientY;
+                pdfPointerDownTime = Date.now();
+            }, { passive: true });
+
             pdfViewerEl.addEventListener('click', (e) => {
                 if (this.currentBookType !== 'pdf') return;
                 if (e.target.closest('button') || e.target.closest('a') || e.target.closest('input') || e.target.closest('select')) {
+                    return;
+                }
+                // Kullanıcı kaydırma (scroll/drag) yapıyorsa tıklama olarak algılama
+                const movedDist = Math.hypot(e.clientX - pdfPointerDownX, e.clientY - pdfPointerDownY);
+                if (movedDist > 12) {
                     return;
                 }
                 const sel = window.getSelection();

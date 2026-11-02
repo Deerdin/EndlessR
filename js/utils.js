@@ -536,46 +536,141 @@ const utils = {
 
     // Tarayıcının "deerdin.github.io web sitesinin mesajı" başlığını göstermeyen uygulama içi bildirim / uyarı penceresi
     showAppAlert(message) {
-        try {
-            let overlay = document.getElementById('endlessr-custom-alert-overlay');
-            if (!overlay) {
-                overlay = document.createElement('div');
-                overlay.id = 'endlessr-custom-alert-overlay';
-                overlay.className = 'modal-overlay notranslate';
-                overlay.setAttribute('translate', 'no');
-                overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0, 0, 0, 0.62); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 10000; padding: 20px;';
-                overlay.innerHTML = `
-                    <div class="modal-content glass" style="width: 100%; max-width: 340px; padding: 20px 18px 16px; border-radius: var(--radius-lg, 16px); border: 1px solid var(--border-color, rgba(255,255,255,0.12)); background: var(--bg-surface-solid, #18181b); box-shadow: 0 18px 40px rgba(0,0,0,0.45); display: flex; flex-direction: column; gap: 16px; text-align: center;">
-                        <p id="endlessr-custom-alert-text" style="font-size: 14px; font-weight: 500; line-height: 1.5; color: var(--text-primary, #f4f4f5); margin: 0; white-space: pre-line; word-break: break-word;"></p>
-                        <button type="button" id="endlessr-custom-alert-ok" class="action-btn" style="padding: 10px 16px; font-size: 14px; border-radius: var(--radius-md, 10px); width: 100%;">OK</button>
-                    </div>
-                `;
-                document.body.appendChild(overlay);
+        return new Promise((resolve) => {
+            try {
+                let overlay = document.getElementById('endlessr-custom-alert-overlay');
+                if (!overlay) {
+                    overlay = document.createElement('div');
+                    overlay.id = 'endlessr-custom-alert-overlay';
+                    overlay.className = 'modal-overlay notranslate';
+                    overlay.setAttribute('translate', 'no');
+                    overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0, 0, 0, 0.65); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 10000; padding: 20px;';
+                    overlay.innerHTML = `
+                        <div class="modal-content glass" style="width: 100%; max-width: 340px; padding: 22px 20px 18px; border-radius: var(--radius-lg, 18px); border: 1px solid var(--border-color, rgba(255,255,255,0.12)); background: var(--bg-surface-solid, #18181b); box-shadow: 0 18px 40px rgba(0,0,0,0.45); display: flex; flex-direction: column; gap: 16px; text-align: center;">
+                            <p id="endlessr-custom-alert-text" style="font-size: 14px; font-weight: 500; line-height: 1.5; color: var(--text-primary, #f4f4f5); margin: 0; white-space: pre-line; word-break: break-word;"></p>
+                            <button type="button" id="endlessr-custom-alert-ok" class="action-btn" style="padding: 10px 16px; font-size: 14px; font-weight: 600; border-radius: var(--radius-md, 10px); width: 100%; border: none; cursor: pointer;">OK</button>
+                        </div>
+                    `;
+                    document.body.appendChild(overlay);
+                }
 
-                const closeAlert = () => {
-                    overlay.style.display = 'none';
-                };
+                const textEl = overlay.querySelector('#endlessr-custom-alert-text');
+                if (textEl) {
+                    textEl.textContent = String(message !== undefined && message !== null ? message : '');
+                }
+
                 const okBtn = overlay.querySelector('#endlessr-custom-alert-ok');
-                if (okBtn) okBtn.addEventListener('click', closeAlert);
-                overlay.addEventListener('click', (e) => {
-                    if (e.target === overlay) closeAlert();
-                });
-            }
+                const cleanup = () => {
+                    overlay.style.display = 'none';
+                    if (okBtn) okBtn.onclick = null;
+                    overlay.onclick = null;
+                    resolve();
+                };
 
-            const textEl = overlay.querySelector('#endlessr-custom-alert-text');
-            if (textEl) {
-                textEl.textContent = String(message !== undefined && message !== null ? message : '');
+                if (okBtn) {
+                    okBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        cleanup();
+                    };
+                }
+                overlay.onclick = (e) => {
+                    if (e.target === overlay) cleanup();
+                };
+
+                overlay.style.display = 'flex';
+                if (okBtn) {
+                    setTimeout(() => {
+                        try { okBtn.focus(); } catch (e) {}
+                    }, 20);
+                }
+            } catch (e) {
+                console.warn("Custom alert fallback:", message, e);
+                resolve();
             }
-            overlay.style.display = 'flex';
-            const okBtn = overlay.querySelector('#endlessr-custom-alert-ok');
-            if (okBtn) {
-                setTimeout(() => {
-                    try { okBtn.focus(); } catch (e) {}
-                }, 20);
+        });
+    },
+
+    // Tarayıcının "deerdin.github.io web sitesinin mesajı" başlığını göstermeyen şık onay penceresi
+    showAppConfirm(message, options = {}) {
+        return new Promise((resolve) => {
+            try {
+                let overlay = document.getElementById('endlessr-custom-confirm-overlay');
+                if (!overlay) {
+                    overlay = document.createElement('div');
+                    overlay.id = 'endlessr-custom-confirm-overlay';
+                    overlay.className = 'modal-overlay notranslate';
+                    overlay.setAttribute('translate', 'no');
+                    overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0, 0, 0, 0.65); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 10000; padding: 20px;';
+                    overlay.innerHTML = `
+                        <div class="modal-content glass" style="width: 100%; max-width: 340px; padding: 22px 20px 18px; border-radius: var(--radius-lg, 18px); border: 1px solid var(--border-color, rgba(255,255,255,0.12)); background: var(--bg-surface-solid, #18181b); box-shadow: 0 18px 40px rgba(0,0,0,0.45); display: flex; flex-direction: column; gap: 18px; text-align: center;">
+                            <p id="endlessr-custom-confirm-text" style="font-size: 14px; font-weight: 500; line-height: 1.5; color: var(--text-primary, #f4f4f5); margin: 0; white-space: pre-line; word-break: break-word;"></p>
+                            <div style="display: flex; gap: 10px; width: 100%;">
+                                <button type="button" id="endlessr-custom-confirm-cancel" class="action-outline-btn" style="flex: 1; padding: 10px 14px; font-size: 13px; font-weight: 600; border-radius: var(--radius-md, 10px); cursor: pointer;">Cancel</button>
+                                <button type="button" id="endlessr-custom-confirm-ok" class="action-btn" style="flex: 1; padding: 10px 14px; font-size: 13px; font-weight: 600; border-radius: var(--radius-md, 10px); border: none; cursor: pointer;">Confirm</button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(overlay);
+                }
+
+                const textEl = overlay.querySelector('#endlessr-custom-confirm-text');
+                if (textEl) {
+                    textEl.textContent = String(message !== undefined && message !== null ? message : '');
+                }
+
+                const okBtn = overlay.querySelector('#endlessr-custom-confirm-ok');
+                const cancelBtn = overlay.querySelector('#endlessr-custom-confirm-cancel');
+
+                const isDanger = !!options.danger;
+                if (okBtn) {
+                    okBtn.textContent = options.confirmText || (isDanger ? 'Delete' : 'Confirm');
+                    if (isDanger) {
+                        okBtn.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
+                        okBtn.style.color = '#ffffff';
+                    } else {
+                        okBtn.style.background = 'var(--accent-gradient)';
+                        okBtn.style.color = '#ffffff';
+                    }
+                }
+                if (cancelBtn) {
+                    cancelBtn.textContent = options.cancelText || 'Cancel';
+                }
+
+                const cleanup = (result) => {
+                    overlay.style.display = 'none';
+                    if (okBtn) okBtn.onclick = null;
+                    if (cancelBtn) cancelBtn.onclick = null;
+                    overlay.onclick = null;
+                    resolve(result);
+                };
+
+                if (okBtn) {
+                    okBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        cleanup(true);
+                    };
+                }
+                if (cancelBtn) {
+                    cancelBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        cleanup(false);
+                    };
+                }
+                overlay.onclick = (e) => {
+                    if (e.target === overlay) cleanup(false);
+                };
+
+                overlay.style.display = 'flex';
+                if (cancelBtn) {
+                    setTimeout(() => {
+                        try { cancelBtn.focus(); } catch (e) {}
+                    }, 20);
+                }
+            } catch (e) {
+                console.warn("Custom confirm fallback:", message, e);
+                resolve(false);
             }
-        } catch (e) {
-            console.warn("Custom alert fallback:", message, e);
-        }
+        });
     }
 };
 
