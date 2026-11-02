@@ -287,6 +287,33 @@ const reader = {
         }
     },
 
+    // PDF modunda kullanıcı yukarı kaydırdığında önceki sayfayı üste kesintisiz yükler
+    async checkAndPrependPreviousPdfPage() {
+        if (this.currentBookType !== 'pdf' || !this.pdfDocument) return;
+        if (this.pdfRendering) return;
+        if (this.isRestoringBook || this.isRestoringPosition) return;
+
+        const pageBlocks = Array.from(document.querySelectorAll('#pdf-viewer .pdf-page-block'));
+        if (pageBlocks.length === 0) return;
+
+        let minPage = this.pdfCurrentPage || 1;
+        pageBlocks.forEach(blk => {
+            const pNum = parseInt(blk.getAttribute('data-page-number'), 10);
+            if (!isNaN(pNum) && pNum < minPage) minPage = pNum;
+        });
+
+        if (minPage <= 1) return;
+
+        const firstBlock = pageBlocks[0];
+        const rect = firstBlock.getBoundingClientRect();
+        // Sayfanın üst kenarına 900px veya daha az mesafe kaldığında önceki sayfayı kuyruğa al
+        if (rect.top > -900) {
+            const prevPage = minPage - 1;
+            await this.renderPdfPage(prevPage, false, true);
+            setTimeout(() => this.checkAndPrependPreviousPdfPage(), 250);
+        }
+    },
+
     // EPUB içinde belirli bir bölüme (TOC, Slider veya İleri/Geri butonu ile) doğrudan geçiş yapar
     async goToEpubHref(href) {
         if (!href || !this.epubRendition) return;
@@ -751,6 +778,13 @@ const reader = {
 
             document.documentElement.classList.add('reader-active');
             document.body.classList.add('reader-active');
+            if (book.type === 'pdf') {
+                document.documentElement.classList.add('reader-active-pdf');
+                document.body.classList.add('reader-active-pdf');
+            } else {
+                document.documentElement.classList.remove('reader-active-pdf');
+                document.body.classList.remove('reader-active-pdf');
+            }
             
             // Başlangıçta üst bar ve alt ayar panelini kapalı yap
             const readerHeader = document.querySelector('.reader-header');
@@ -1643,6 +1677,11 @@ const reader = {
 
         await this.renderPdfPage(this.pdfCurrentPage, false);
 
+        // Eğer 1'den büyük bir sayfada başladıysak, kullanıcının geriye doğru kesintisiz kaydırabilmesi için önceki sayfayı hemen üste ekle
+        if (this.pdfCurrentPage > 1) {
+            await this.renderPdfPage(this.pdfCurrentPage - 1, false, true);
+        }
+
         // PDF sonsuz kaydırması için sonraki sayfayı erkenden kuyruğa al
         setTimeout(() => {
             this.checkAndAppendNextChapter();
@@ -1750,8 +1789,8 @@ const reader = {
         pageBlock.appendChild(footerDiv);
     },
 
-    // PDF Sayfası Render Etme (Canvas + TextLayer; append=true ise sonsuz kaydırma için alta ekler)
-    async renderPdfPage(pageNumber, append = false) {
+    // PDF Sayfası Render Etme (Canvas + TextLayer; append=true alta ekler, prepend=true üste ekler)
+    async renderPdfPage(pageNumber, append = false, prepend = false) {
         if (!this.pdfDocument) return;
         if (pageNumber < 1 || pageNumber > this.pdfTotalPages) return;
         if (this.pdfRendering) return;
@@ -1759,7 +1798,7 @@ const reader = {
         const viewerContainer = document.getElementById('pdf-viewer');
         if (!viewerContainer) return;
 
-        if (append && viewerContainer.querySelector(`.pdf-page-block[data-page-number="${pageNumber}"]`)) {
+        if ((append || prepend) && viewerContainer.querySelector(`.pdf-page-block[data-page-number="${pageNumber}"]`)) {
             return;
         }
 
@@ -1849,6 +1888,20 @@ const reader = {
                 if (Math.abs(this.getScrollTop() - savedScrollY) > 2) {
                     this.setScrollTop(savedScrollY);
                 }
+            } else if (prepend) {
+                const firstBlock = viewerContainer.querySelector('.pdf-page-block');
+                const beforeTop = firstBlock ? firstBlock.getBoundingClientRect().top : 0;
+                const oldScrollTop = this.getScrollTop();
+
+                viewerContainer.insertBefore(pageBlock, viewerContainer.firstChild);
+
+                if (firstBlock) {
+                    const afterTop = firstBlock.getBoundingClientRect().top;
+                    const shift = Math.round(afterTop - beforeTop);
+                    if (shift > 0) {
+                        this.setScrollTop(oldScrollTop + shift);
+                    }
+                }
             } else {
                 viewerContainer.innerHTML = '';
                 viewerContainer.appendChild(pageBlock);
@@ -1859,9 +1912,6 @@ const reader = {
                     appliedScrollTop = this.pdfSavedScrollTop;
                     this.pdfSavedScrollTop = 0; // Bir kere uygulandıktan sonra sıfırla
                     this.setScrollTop(appliedScrollTop);
-                    requestAnimationFrame(() => {
-                        this.setScrollTop(appliedScrollTop);
-                    });
                 } else {
                     this.setScrollTop(0);
                 }
@@ -1915,10 +1965,13 @@ const reader = {
                 }, 50);
             }
 
-            // Sonsuz kaydırma modundaysa ve ekran henüz dolmadıysa sıradaki sayfayı kontrol et
+            // Sonsuz kaydırma modundaysa ve ekran henüz dolmadıysa sıradaki veya önceki sayfayı kontrol et
             if (this.currentBookType === 'pdf' || this.settings.readerType === 'infinite') {
                 setTimeout(() => {
                     this.checkAndAppendNextChapter();
+                    if (this.currentBookType === 'pdf') {
+                        this.checkAndPrependPreviousPdfPage();
+                    }
                 }, 150);
             }
 
@@ -1932,18 +1985,57 @@ const reader = {
     // PDF İçindekiler (Outline) Listesi Yükleme
     async loadPdfToc() {
         const tocList = document.getElementById('toc-list');
+        if (!tocList) return;
         tocList.innerHTML = '';
         
+        // Üste hızlı sayfa numarasına atlama çubuğu (Jump to Page)
+        const jumpContainer = document.createElement('div');
+        jumpContainer.className = 'toc-jump-bar';
+        jumpContainer.style.cssText = 'display:flex; gap:8px; padding:10px 12px; margin-bottom:10px; border-bottom:1px solid var(--border-color); align-items:center; position:sticky; top:0; background:var(--bg-surface-solid); z-index:2;';
+        
+        const jumpInput = document.createElement('input');
+        jumpInput.type = 'number';
+        jumpInput.min = '1';
+        jumpInput.max = String(this.pdfTotalPages || 1);
+        jumpInput.value = String(this.pdfCurrentPage || 1);
+        jumpInput.placeholder = `Page 1 - ${this.pdfTotalPages || 1}`;
+        jumpInput.style.cssText = 'flex:1; min-width:0; padding:8px 10px; font-size:13px; border-radius:6px; border:1px solid var(--border-color); background:rgba(128,128,128,0.1); color:var(--text-primary); outline:none;';
+
+        const jumpBtn = document.createElement('button');
+        jumpBtn.type = 'button';
+        jumpBtn.className = 'action-btn';
+        jumpBtn.textContent = 'Go';
+        jumpBtn.style.cssText = 'padding:8px 14px; font-size:13px; font-weight:600; cursor:pointer; border-radius:6px; white-space:nowrap;';
+
+        const performJump = () => {
+            const targetPage = parseInt(jumpInput.value, 10);
+            if (!isNaN(targetPage) && targetPage >= 1 && targetPage <= this.pdfTotalPages) {
+                this.renderPdfPage(targetPage, false);
+                this.closeTOCPanel();
+            }
+        };
+
+        jumpBtn.addEventListener('click', performJump);
+        jumpInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                performJump();
+            }
+        });
+
+        jumpContainer.appendChild(jumpInput);
+        jumpContainer.appendChild(jumpBtn);
+        tocList.appendChild(jumpContainer);
+
         try {
             const outline = await this.pdfDocument.getOutline();
             if (outline && outline.length > 0) {
-                // Basitçe ilk seviye başlıkları ekle
+                // İlk seviye başlıkları ekle
                 outline.forEach(item => {
                     const div = document.createElement('div');
                     div.className = 'toc-item';
                     div.textContent = item.title;
                     div.onclick = async () => {
-                        // PDF sayfa hedefini bulma işlemi (Destinations)
                         if (item.dest) {
                             try {
                                 const destRef = typeof item.dest === 'string' ? item.dest : item.dest[0];
@@ -1958,11 +2050,13 @@ const reader = {
                     tocList.appendChild(div);
                 });
             } else {
-                // İçindekiler yoksa sayfaları listeleyelim (Hızlı Gezinme)
-                const step = this.pdfTotalPages > 60 ? 5 : 1;
-                for (let i = 1; i <= Math.min(this.pdfTotalPages, 200); i += step) {
+                // İçindekiler outline yoksa sayfaları listele
+                const total = this.pdfTotalPages || 1;
+                const step = total > 100 ? 5 : 1;
+                for (let i = 1; i <= total; i += step) {
                     const div = document.createElement('div');
                     div.className = 'toc-item';
+                    if (i === this.pdfCurrentPage) div.classList.add('active');
                     div.textContent = `Page ${i}`;
                     div.onclick = () => {
                         this.renderPdfPage(i, false);
@@ -1972,7 +2066,7 @@ const reader = {
                 }
             }
         } catch (e) {
-            tocList.innerHTML = '<p class="empty-text">Could not load table of contents.</p>';
+            console.warn("Could not load table of contents:", e);
         }
     },
 
@@ -2731,6 +2825,11 @@ const reader = {
                 }
                 this.pdfSavedScrollTop = offsetInPage;
                 await this.renderPdfPage(this.pdfCurrentPage, false);
+
+        // Eğer 1'den büyük bir sayfada başladıysak, kullanıcının geriye doğru kesintisiz kaydırabilmesi için önceki sayfayı hemen üste ekle
+        if (this.pdfCurrentPage > 1) {
+            await this.renderPdfPage(this.pdfCurrentPage - 1, false, true);
+        }
 
         // PDF sonsuz kaydırması için sonraki sayfayı erkenden kuyruğa al
         setTimeout(() => {
@@ -5478,6 +5577,8 @@ const reader = {
 
         document.documentElement.classList.remove('reader-active');
         document.body.classList.remove('reader-active');
+        document.documentElement.classList.remove('reader-active-pdf');
+        document.body.classList.remove('reader-active-pdf');
         document.documentElement.style.backgroundColor = '';
         this.isRestoringBook = false;
 
@@ -5603,6 +5704,9 @@ window.addEventListener('scroll', () => {
     const isInfinite = (reader.currentBookType === 'pdf') || (reader.settings.readerType === 'infinite');
     if (isInfinite && !reader.isRestoringPosition) {
         reader.checkAndAppendNextChapter();
+        if (reader.currentBookType === 'pdf') {
+            reader.checkAndPrependPreviousPdfPage();
+        }
     }
 
     if (reader.currentBookType === 'epub') {

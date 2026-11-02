@@ -2260,6 +2260,36 @@ const app = {
             reader.closeTOCPanel();
         });
 
+        // PDF Sol Alt İçindekiler Açma Tutamacı (Yarım Daire >)
+        const pdfTocTab = document.getElementById('btn-pdf-toc-tab');
+        if (pdfTocTab) {
+            pdfTocTab.addEventListener('click', (e) => {
+                e.stopPropagation();
+                reader.openTOCPanel();
+            });
+
+            // Sağa kaydırma/çekme ile açma hareketi desteği
+            let touchStartX = 0;
+            let touchStartY = 0;
+            pdfTocTab.addEventListener('touchstart', (e) => {
+                if (e.touches && e.touches[0]) {
+                    touchStartX = e.touches[0].clientX;
+                    touchStartY = e.touches[0].clientY;
+                }
+            }, { passive: true });
+
+            pdfTocTab.addEventListener('touchend', (e) => {
+                if (e.changedTouches && e.changedTouches[0]) {
+                    const deltaX = e.changedTouches[0].clientX - touchStartX;
+                    const deltaY = Math.abs(e.changedTouches[0].clientY - touchStartY);
+                    if (deltaX > 20 && deltaY < 60) {
+                        e.stopPropagation();
+                        reader.openTOCPanel();
+                    }
+                }
+            }, { passive: true });
+        }
+
         // BİRLEŞİK OKUMA AYARLARI KONTROL PANELİ EYLEMLERİ
         // Panel Aç/Kapat FAB Tetikleyici
         document.getElementById('btn-reader-panel-trigger').addEventListener('click', () => {
@@ -2616,23 +2646,34 @@ const app = {
         document.addEventListener('mousedown', (e) => {
             const popover = document.getElementById('translate-popover');
             const panel = document.getElementById('reader-options-panel');
+            const tocPanel = document.getElementById('toc-panel');
             
             // Eğer tıklanan yer popover değilse ve seçim alanı değilse kapat
-            if (popover.style.display === 'flex' && 
+            if (popover && popover.style.display === 'flex' && 
                 !popover.contains(e.target) && 
                 !e.target.closest('#btn-reader-toc') &&
+                !e.target.closest('#btn-pdf-toc-tab') &&
                 !e.target.closest('.side-panel')) {
                 reader.hidePopover(false);
             }
             
             // Eğer tıklanan yer kontrol paneli veya tetikleyicisi değilse paneli kapat
-            if (panel.classList.contains('open') &&
+            if (panel && panel.classList.contains('open') &&
                 !panel.contains(e.target) &&
                 !e.target.closest('#btn-reader-panel-trigger') &&
                 !e.target.closest('#btn-reader-toc') &&
+                !e.target.closest('#btn-pdf-toc-tab') &&
                 !e.target.closest('.side-panel') &&
                 !e.target.closest('.reader-header')) {
                 reader.closeStylePanel();
+            }
+
+            // Eğer içindekiler paneli açıksa ve dışına tıklandıysa kapat
+            if (tocPanel && tocPanel.classList.contains('open') &&
+                !tocPanel.contains(e.target) &&
+                !e.target.closest('#btn-reader-toc') &&
+                !e.target.closest('#btn-pdf-toc-tab')) {
+                reader.closeTOCPanel();
             }
         });
 
