@@ -557,6 +557,11 @@ const app = {
     // Önceden yüklenmiş ve henüz kelime/sayfa/bölüm istatistiği hesaplanmamış kitapları arka planda analiz edip kaydeder
     async ensureMissingBooksStats() {
         if (this._isCalculatingMissingStats) return;
+        // Okuyucu aktifken arka planda istatistik hesaplayıp arayüzü tetikleme
+        if (document.body.classList.contains('reader-active') || (document.getElementById('view-reader') && document.getElementById('view-reader').style.display === 'flex')) {
+            return;
+        }
+
         this._attemptedStatsIds = this._attemptedStatsIds || new Set();
         const missing = (this.allLoadedBooks || []).filter(b =>
             b && b.id && !b.statsCalculated && !this._attemptedStatsIds.has(b.id) && !(Number(b.wordCount) > 0)
@@ -567,6 +572,9 @@ const app = {
         let anyUpdated = false;
         try {
             for (const b of missing) {
+                if (document.body.classList.contains('reader-active') || (document.getElementById('view-reader') && document.getElementById('view-reader').style.display === 'flex')) {
+                    break;
+                }
                 this._attemptedStatsIds.add(b.id);
                 const fullBook = await booksDb.getBook(b.id);
                 if (fullBook && fullBook.file && typeof utils !== 'undefined' && utils.computeBookStats) {
@@ -593,7 +601,7 @@ const app = {
             this._isCalculatingMissingStats = false;
         }
 
-        if (anyUpdated) {
+        if (anyUpdated && !document.body.classList.contains('reader-active') && (!document.getElementById('view-reader') || document.getElementById('view-reader').style.display !== 'flex')) {
             await this.loadLibrary();
         }
     },
@@ -645,20 +653,44 @@ const app = {
 
     // 2. Kütüphaneyi IndexedDB'den Yükle
     async loadLibrary() {
+        const seq = ++(this._loadLibrarySeq || (this._loadLibrarySeq = 0));
         const bookGrid = document.getElementById('book-grid');
         const profileBookGrid = document.getElementById('profile-book-grid');
         const emptyState = document.getElementById('library-empty');
         const statsSummary = document.getElementById('profile-stats-text');
         
-        if (bookGrid) bookGrid.innerHTML = '';
-        if (profileBookGrid) profileBookGrid.innerHTML = '';
-        
-        const books = await booksDb.getAllBooks();
-        const customFolders = await settingsDb.get('customFolders', []) || [];
+        const rawBooks = await booksDb.getAllBooks();
+        const rawFolders = await settingsDb.get('customFolders', []) || [];
+
+        // Concurrency guard: Başka bir loadLibrary çağrısı başladıysa bu bayat çağrıyı DOM'a dokunmadan sonlandır
+        if (this._loadLibrarySeq !== seq) return;
+
+        // Kitapları ID bazında tekilleştir (herhangi bir mükerrer kaydı engelle)
+        const seenIds = new Set();
+        const books = [];
+        for (const b of (rawBooks || [])) {
+            if (b && b.id && !seenIds.has(b.id)) {
+                seenIds.add(b.id);
+                books.push(b);
+            }
+        }
+
+        // Özel klasörleri ID bazında tekilleştir
+        const seenFolderIds = new Set();
+        const customFolders = [];
+        for (const f of (Array.isArray(rawFolders) ? rawFolders : [])) {
+            if (f && f.id && !seenFolderIds.has(f.id)) {
+                seenFolderIds.add(f.id);
+                customFolders.push(f);
+            }
+        }
+
         this.allLoadedBooks = books;
-        this.customFolders = Array.isArray(customFolders) ? customFolders : [];
+        this.customFolders = customFolders;
 
         if (books.length === 0 && this.customFolders.length === 0) {
+            if (bookGrid) bookGrid.innerHTML = '';
+            if (profileBookGrid) profileBookGrid.innerHTML = '';
             if (emptyState) {
                 emptyState.style.display = 'flex';
                 const pEl = emptyState.querySelector('p');
@@ -669,8 +701,8 @@ const app = {
         } else {
             // Okuma istatistikleri
             const totalBooks = books.length;
-            const readBooks = books.filter(b => b.progressPercent >= 95).length;
-            const readingBooks = books.filter(b => b.progressPercent > 0 && b.progressPercent < 95).length;
+            const readBooks = books.filter(b => (b.progressPercent || 0) >= 95).length;
+            const readingBooks = books.filter(b => (b.progressPercent || 0) > 0 && (b.progressPercent || 0) < 95).length;
             
             if (statsSummary) {
                 statsSummary.textContent = `${totalBooks} books loaded. (${readingBooks} reading, ${readBooks} finished)`;
@@ -699,31 +731,38 @@ const app = {
                 }
             });
 
-            if (homeItems.length === 0) {
-                if (emptyState) {
-                    emptyState.style.display = 'flex';
-                    const pEl = emptyState.querySelector('p');
-                    if (pEl) {
-                        pEl.textContent = bookshelfItems.length > 0
-                            ? 'All your folders and books have been moved to the Library (Profile) tab.'
-                            : 'Your library is empty. Upload your first EPUB or PDF book from here!';
+            // Ana Sayfa Izgarası (DocumentFragment ile atomik ve tekilleştirilmiş çizim)
+            if (bookGrid) {
+                bookGrid.innerHTML = '';
+                if (homeItems.length === 0) {
+                    if (emptyState) {
+                        emptyState.style.display = 'flex';
+                        const pEl = emptyState.querySelector('p');
+                        if (pEl) {
+                            pEl.textContent = bookshelfItems.length > 0
+                                ? 'All your folders and books have been moved to the Library (Profile) tab.'
+                                : 'Your library is empty. Upload your first EPUB or PDF book from here!';
+                        }
                     }
+                } else {
+                    if (emptyState) emptyState.style.display = 'none';
+                    const homeFrag = document.createDocumentFragment();
+                    homeItems.forEach(item => {
+                        if (item.isFolder) {
+                            const folderCard = this.createFolderCard(item.group);
+                            homeFrag.appendChild(folderCard);
+                        } else {
+                            const card = this.createBookCard(item.book);
+                            homeFrag.appendChild(card);
+                        }
+                    });
+                    bookGrid.appendChild(homeFrag);
                 }
-            } else {
-                if (emptyState) emptyState.style.display = 'none';
-                homeItems.forEach(item => {
-                    if (item.isFolder) {
-                        const folderCard = this.createFolderCard(item.group);
-                        if (bookGrid) bookGrid.appendChild(folderCard);
-                    } else {
-                        const card = this.createBookCard(item.book);
-                        if (bookGrid) bookGrid.appendChild(card);
-                    }
-                });
             }
 
-            // Profil -> Kitaplık sekmesine hem klasörlü serileri (bir bütün klasör olarak) hem de tekil kitapları ekle
+            // Profil -> Kitaplık sekmesine hem klasörlü serileri hem de tekil kitapları ekle
             if (profileBookGrid) {
+                profileBookGrid.innerHTML = '';
                 if (bookshelfItems.length === 0) {
                     profileBookGrid.innerHTML = `
                         <div class="empty-state" style="display: flex; grid-column: 1 / -1; padding: 30px 10px;">
@@ -732,15 +771,17 @@ const app = {
                         </div>
                     `;
                 } else {
+                    const profileFrag = document.createDocumentFragment();
                     bookshelfItems.forEach(item => {
                         if (item.isFolder) {
                             const folderCard = this.createFolderCard(item.group);
-                            profileBookGrid.appendChild(folderCard);
+                            profileFrag.appendChild(folderCard);
                         } else {
                             const profileCard = this.createBookCard(item.book);
-                            profileBookGrid.appendChild(profileCard);
+                            profileFrag.appendChild(profileCard);
                         }
                     });
+                    profileBookGrid.appendChild(profileFrag);
                 }
             }
 
@@ -769,8 +810,10 @@ const app = {
         lucide.createIcons();
         this.updateDatabaseStatsUI();
 
-        // Eksik kelime/sayfa/bölüm istatistiği olan kitapları arka planda hesapla
-        this.ensureMissingBooksStats();
+        // Okuyucu aktif değilse eksik kelime/sayfa/bölüm istatistiği olan kitapları arka planda hesapla
+        if (!document.body.classList.contains('reader-active') && (!document.getElementById('view-reader') || document.getElementById('view-reader').style.display !== 'flex')) {
+            this.ensureMissingBooksStats();
+        }
     },
 
     // Kitap Silme İşlemi
@@ -2240,7 +2283,6 @@ const app = {
                     const success = await booksDb.deleteBook(bookId);
                     if (success) {
                         reader.closeReader();
-                        app.loadLibrary();
                     } else {
                         alert("Could not delete the book.");
                     }

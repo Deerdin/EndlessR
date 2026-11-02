@@ -931,9 +931,6 @@ const reader = {
             // Son okuma zamanını güncelle (dosya buffer'ını yeniden yazmadan hafif metadata güncellemesi)
             book.lastReadAt = Date.now();
             await booksDb.updateBookMetadata(bookId, { lastReadAt: book.lastReadAt });
-            
-            // Kütüphaneyi arka planda yenile
-            if (window.app) window.app.loadLibrary();
 
             // Bind voice synthesis voices loaded event
             if ('speechSynthesis' in window) {
