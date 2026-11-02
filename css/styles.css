@@ -457,7 +457,7 @@ body.theme-light .header-logo .logo-accent {
     bottom: 0;
     left: 0;
     right: 0;
-    min-height: 78px;
+    min-height: 50px;
     height: auto;
     display: flex;
     justify-content: space-around;
