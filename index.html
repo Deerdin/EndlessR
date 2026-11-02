@@ -15,7 +15,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <!-- CSS Stylesheet -->
-    <link rel="stylesheet" href="css/styles.css?v=51">
+    <link rel="stylesheet" href="css/styles.css?v=52">
     <script>
         (function() {
             try {
@@ -95,26 +95,23 @@
 
         <!-- 2. Profil Ekranı -->
         <section id="view-profile" class="app-view">
-            <!-- Profil Üst Barı -->
-            <header class="view-header">
-                <div class="view-title">Library & Profile</div>
+            <!-- Profil Üst Barı (Segment Butonları ile Birlikte Home Gibi Üstte Sabit) -->
+            <header class="view-header profile-header-bar" style="padding: calc(env(safe-area-inset-top, 16px) + 8px) 16px 8px; justify-content: center;">
+                <div class="profile-segment-bar glass" style="margin: 0; width: 100%; max-width: 100%;">
+                    <button class="segment-btn active" data-segment="profile-books">
+                        <i data-lucide="library" style="width: 14px; height: 14px; margin-right: 4px;"></i>Library
+                    </button>
+                    <button class="segment-btn" data-segment="profile-words">
+                        <i data-lucide="languages" style="width: 14px; height: 14px; margin-right: 4px;"></i>Dictionary
+                    </button>
+                    <button class="segment-btn" data-segment="profile-replacements">
+                        <i data-lucide="edit-3" style="width: 14px; height: 14px; margin-right: 4px;"></i>Replacements
+                    </button>
+                </div>
             </header>
 
-            <!-- Segment Değiştirici (Sub-navigation) -->
-            <div class="profile-segment-bar glass">
-                <button class="segment-btn active" data-segment="profile-books">
-                    <i data-lucide="library" style="width: 14px; height: 14px; margin-right: 4px;"></i>Library
-                </button>
-                <button class="segment-btn" data-segment="profile-words">
-                    <i data-lucide="languages" style="width: 14px; height: 14px; margin-right: 4px;"></i>Dictionary
-                </button>
-                <button class="segment-btn" data-segment="profile-replacements">
-                    <i data-lucide="edit-3" style="width: 14px; height: 14px; margin-right: 4px;"></i>Replacements
-                </button>
-            </div>
-
             <!-- Segment İçerikleri -->
-            <main class="view-content">
+            <main class="view-content" style="padding-top: 8px;">
                 <!-- SEGMENT 1: KİTAPLIK (Profil içi kitaplık) -->
                 <div id="profile-books" class="segment-pane active">
                     <div class="segment-header">
@@ -160,11 +157,7 @@
 
         <!-- 3. Ayarlar Ekranı -->
         <section id="view-settings" class="app-view">
-            <header class="view-header">
-                <div class="view-title">Settings</div>
-            </header>
-            
-            <main class="view-content" style="padding: 12px 20px 100px; display: flex; flex-direction: column; gap: 16px;">
+            <main class="view-content" style="padding: calc(env(safe-area-inset-top, 16px) + 14px) 16px 20px; display: flex; flex-direction: column; gap: 16px;">
                 <!-- Veritabanı Özeti Kartı -->
                 <div class="glass" style="padding: 16px; border-radius: var(--radius-lg); border: 1px solid var(--border-color);">
                     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
@@ -960,11 +953,11 @@
 
     <!-- Uygulama Scriptleri -->
     <script src="capacitor.js"></script>
-    <script src="js/db.js?v=51"></script>
-    <script src="js/utils.js?v=51"></script>
-    <script src="js/translate.js?v=51"></script>
-    <script src="js/pdf2epub.js?v=51"></script>
-    <script src="js/reader.js?v=51"></script>
-    <script src="js/app.js?v=51"></script>
+    <script src="js/db.js?v=52"></script>
+    <script src="js/utils.js?v=52"></script>
+    <script src="js/translate.js?v=52"></script>
+    <script src="js/pdf2epub.js?v=52"></script>
+    <script src="js/reader.js?v=52"></script>
+    <script src="js/app.js?v=52"></script>
 </body>
 </html>

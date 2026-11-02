@@ -24,9 +24,9 @@
 
 /* 1. KOYU TEMA (Varsayılan) */
 body.theme-dark {
-    --bg-app: #13161c;
-    --bg-surface: rgba(30, 34, 43, 0.85);
-    --bg-surface-solid: #1e222b;
+    --bg-app: #161920;
+    --bg-surface: rgba(30, 35, 45, 0.88);
+    --bg-surface-solid: #1e232d;
     --border-color: rgba(255, 255, 255, 0.08);
     --border-hover: rgba(255, 255, 255, 0.15);
     --text-primary: #bcc5cf;
@@ -312,7 +312,7 @@ body {
     flex-direction: column;
     overflow-y: auto;
     overflow-x: hidden;
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); /* Alt navigasyon barı payı */
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 68px); /* Alt navigasyon barı payı */
     animation: fadeIn var(--transition-normal) forwards;
 }
 
@@ -1866,9 +1866,16 @@ body.theme-warm {
     display: flex;
     padding: 4px;
     border-radius: var(--radius-md);
-    margin: 10px 16px 8px;
+    margin: 0;
     gap: 4px;
-    max-width: calc(100% - 32px);
+    width: 100%;
+    max-width: 100%;
+}
+
+.profile-header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .segment-btn {
